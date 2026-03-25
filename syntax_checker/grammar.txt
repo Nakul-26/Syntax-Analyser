@@ -1,0 +1,16 @@
+Control Statement Grammar
+=========================
+
+Supported condition:
+- variable relop variable
+- variable relop number
+
+Supported assignment:
+- variable = variable + number ;
+
+Supported increment:
+- variable ++ ;
+
+Supported control statements:
+- if ( condition ) assignment
+- while ( condition ) increment
