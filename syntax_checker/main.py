@@ -1,36 +1,29 @@
 from pathlib import Path
 
-from parser import parse_if, parse_while
+from parser import parse_program
 from tokenizer import tokenize
-
-
-def check_line(line, line_no):
-    tokens = tokenize(line)
-
-    if not tokens:
-        return
-
-    if tokens[0] == "if":
-        if parse_if(tokens):
-            print(f"Line {line_no}: Valid IF statement")
-        else:
-            print(f"Line {line_no}: Invalid IF syntax")
-
-    elif tokens[0] == "while":
-        if parse_while(tokens):
-            print(f"Line {line_no}: Valid WHILE statement")
-        else:
-            print(f"Line {line_no}: Invalid WHILE syntax")
 
 
 def main():
     program_path = Path(__file__).with_name("test_program.txt")
 
     with program_path.open() as file:
-        lines = file.readlines()
+        code = file.read()
 
-    for i, line in enumerate(lines):
-        check_line(line.strip(), i + 1)
+    tokens = tokenize(code)
+    errors = {}
+    tree = parse_program(tokens, errors)
+
+    if tree is None:
+        error_index = errors.get("index", 0)
+        token = tokens[error_index] if error_index < len(tokens) else "<eof>"
+        message = errors.get("message", "Error: Invalid syntax")
+        print(f"{message} near token: {token}")
+        return
+
+    print("Program is syntactically valid")
+    print("\nParse Tree:")
+    print("\n".join(tree.to_lines()))
 
 
 if __name__ == "__main__":

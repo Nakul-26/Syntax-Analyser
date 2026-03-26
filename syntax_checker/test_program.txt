@@ -1,11 +1,10 @@
-int main() {
-    int a = 5;
-    int b = 3;
+if(a>b){
+    a=a+1;
+    while(b<10){
+        b++;
+    }
+}
 
-    if(a>b) a=a+1;
-
-    while(b<10) b++;
-
-    if(a>b a=a+1;   // invalid
-
+while(b<10){
+    b++;
 }

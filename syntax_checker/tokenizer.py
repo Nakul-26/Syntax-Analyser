@@ -2,5 +2,6 @@ import re
 
 
 def tokenize(line):
-    tokens = re.findall(r"\w+|\+\+|==|!=|<=|>=|[(){};=+<>]", line)
+    source = re.sub(r"//.*", "", line)
+    tokens = re.findall(r"\w+|\+\+|==|!=|<=|>=|[(){};=+<>]", source)
     return tokens

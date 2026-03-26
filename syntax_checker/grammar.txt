@@ -14,3 +14,20 @@ Supported increment:
 Supported control statements:
 - if ( condition ) assignment
 - while ( condition ) increment
+
+Supported blocks:
+- { statement_list }
+
+Supported statement_list:
+- statement statement_list
+- epsilon
+
+Supported statements:
+- assignment
+- increment
+- if ( condition ) block
+- while ( condition ) block
+
+Compatibility note:
+- if ( condition ) assignment
+- while ( condition ) increment
