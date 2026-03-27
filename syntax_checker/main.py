@@ -16,13 +16,13 @@ def main():
 
     if tree is None:
         error_index = errors.get("index", 0)
-        token = tokens[error_index] if error_index < len(tokens) else "<eof>"
-        message = errors.get("message", "Error: Invalid syntax")
-        print(f"{message} near token: {token}")
+        token = errors.get("token", "<eof>")
+        message = errors.get("message", "Invalid syntax")
+        print(f"Error at token {error_index + 1} ('{token}'): {message}")
         return
 
     print("Program is syntactically valid")
-    print("\nParse Tree:")
+    print("\nAST:")
     print("\n".join(tree.to_lines()))
 
 

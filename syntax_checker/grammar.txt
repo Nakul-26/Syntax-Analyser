@@ -1,19 +1,24 @@
 Control Statement Grammar
 =========================
 
+Supported program forms:
+- statement_list
+- int main ( ) block
+
 Supported condition:
 - variable relop variable
 - variable relop number
 
 Supported assignment:
-- variable = variable + number ;
+- variable = expression ;
+
+Supported expression:
+- expr -> term ((+ | -) term)*
+- term -> factor ((* | /) factor)*
+- factor -> variable | number
 
 Supported increment:
 - variable ++ ;
-
-Supported control statements:
-- if ( condition ) assignment
-- while ( condition ) increment
 
 Supported blocks:
 - { statement_list }
@@ -25,9 +30,15 @@ Supported statement_list:
 Supported statements:
 - assignment
 - increment
-- if ( condition ) block
-- while ( condition ) block
+- if ( condition ) statement else_part
+- while ( condition ) statement
+- block
 
-Compatibility note:
-- if ( condition ) assignment
-- while ( condition ) increment
+Supported else_part:
+- else statement
+- epsilon
+
+AST notes:
+- assignments store target and expression as child nodes
+- binary operators become expression nodes such as +, -, *, /
+- conditions store the relational operator as the node value

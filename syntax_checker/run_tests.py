@@ -36,16 +36,37 @@ def main():
     print(f"       expected = {comment_expected}")
     print(f"       actual   = {comment_actual}")
 
+    expr_tokenizer_expected = ["a", "=", "a", "+", "b", "*", "5", "-", "c", ";"]
+    expr_tokenizer_actual = tokenize("a=a+b*5-c;")
+    expr_tokenizer_ok = expr_tokenizer_actual == expr_tokenizer_expected
+
+    print("[PASS]" if expr_tokenizer_ok else "[FAIL]", "TOKENIZER supports expression operators")
+    print(f"       expected = {expr_tokenizer_expected}")
+    print(f"       actual   = {expr_tokenizer_actual}")
+
+    main_tokenizer_expected = [
+        "int", "main", "(", ")", "{", "while", "(", "i", "<", "10", ")", "{",
+        "i", "=", "i", "+", "1", ";", "}", "}",
+    ]
+    main_tokenizer_actual = tokenize("int main(){ while(i<10){ i=i+1; } }")
+    main_tokenizer_ok = main_tokenizer_actual == main_tokenizer_expected
+
+    print("[PASS]" if main_tokenizer_ok else "[FAIL]", "TOKENIZER supports main wrapper")
+    print(f"       expected = {main_tokenizer_expected}")
+    print(f"       actual   = {main_tokenizer_actual}")
+
     cases = [
         ("if", "if(a>b) a=a+1;", True),
         ("if", "if(a>5) a=a+1;", True),
         ("if", "if(a>b a=a+1;", False),
-        ("if", "if(a>b) a=a+b;", False),
+        ("if", "if(a>b) a=a+b;", True),
         ("if", "if(a>=b) a=a+1;", True),
+        ("if", "if(a>b) a=a+b*5-c;", True),
+        ("if", "if(a>b){a=a+1;}else if(a<b){a=a+2;}else{a=a+3;}", True),
         ("while", "while(b<10) b++;", True),
         ("while", "while(x!=9) x++;", True),
         ("while", "while(b<10 b++;", False),
-        ("while", "while(b<10) b=b+1;", False),
+        ("while", "while(b<10) b=b+1;", True),
         ("while", "while(7<b) b++;", False),
         ("if", "if(a>b){a=a+1;}", True),
         ("while", "while(b<10){b++;}", True),
@@ -57,32 +78,72 @@ def main():
         ("if(a>b){ a=a+1; ", False),
         ("while(b<10){ if(a>b) a=a+1; }", True),
         ("if(a>b){ invalid }", False),
+        ("if(a>b){ a=a+b*5-c; }else if(a<b){ a=a+2; }else{ a=a+3; }", True),
+        ("int main(){ if(a>b){ a=a+b*5; } while(i<10){ i=i+1; } }", True),
         ("if(a>b)\n{\n    a=a+1;\n    while(b<10)\n    {\n        b++;\n    }\n}", True),
     ]
 
     error_cases = [
-        ("if(a>b { a=a+1; }", "Error: Missing ')'"),
-        ("while(b<10){ b++ }", "Error: Expected ';'"),
-        ("if(>b){ a=a+1; }", "Error: Invalid condition"),
+        ("if(a>b { a=a+1; }", ("Missing ')'", "{", 6)),
+        ("while(b<10){ b++ }", ("Expected ';'", "}", 10)),
+        ("if(>b){ a=a+1; }", ("Expected variable on left side of condition", ">", 3)),
+        ("if(a>b) a=a+;", ("Expected operand", ";", 11)),
+        ("int main(){ if(a>b){ a=a+1; }", ("Missing '}'", "<eof>", 20)),
     ]
 
-    tree_source = "if(a>b){ a=a+1; while(b<10){ b++; } }"
+    tree_source = "int main(){ if(a>b){ a=a+b*5-c; }else if(a<b){ a=a+2; }else{ a=a+3; } while(i<10){ i=i+1; } }"
     tree_expected = [
         "PROGRAM",
-        "  IF",
-        "    CONDITION (a > b)",
+        "  MAIN",
         "    BLOCK",
-        "      ASSIGN (a = a + 1)",
-        "      WHILE",
-        "        CONDITION (b < 10)",
+        "      IF",
+        "        CONDITION (>)",
+        "          IDENT (a)",
+        "          IDENT (b)",
         "        BLOCK",
-        "          INCREMENT (b++)",
+        "          ASSIGN",
+        "            IDENT (a)",
+        "            -",
+        "              +",
+        "                IDENT (a)",
+        "                *",
+        "                  IDENT (b)",
+        "                  NUMBER (5)",
+        "              IDENT (c)",
+        "        ELSE",
+        "          IF",
+        "            CONDITION (<)",
+        "              IDENT (a)",
+        "              IDENT (b)",
+        "            BLOCK",
+        "              ASSIGN",
+        "                IDENT (a)",
+        "                +",
+        "                  IDENT (a)",
+        "                  NUMBER (2)",
+        "            ELSE",
+        "              BLOCK",
+        "                ASSIGN",
+        "                  IDENT (a)",
+        "                  +",
+        "                    IDENT (a)",
+        "                    NUMBER (3)",
+        "      WHILE",
+        "        CONDITION (<)",
+        "          IDENT (i)",
+        "          NUMBER (10)",
+        "        BLOCK",
+        "          ASSIGN",
+        "            IDENT (i)",
+        "            +",
+        "              IDENT (i)",
+        "              NUMBER (1)",
     ]
 
     passed = 0
     total = 0
 
-    for ok in [tokenizer_ok, comment_ok]:
+    for ok in [tokenizer_ok, comment_ok, expr_tokenizer_ok, main_tokenizer_ok]:
         total += 1
         if ok:
             passed += 1
@@ -94,7 +155,7 @@ def main():
 
     for source, expected in parse_cases:
         total += 1
-        actual = parse(tokenize(source))
+        actual = parse_program(tokenize(source), {}) is not None
         status = "PASS" if actual == expected else "FAIL"
         print(f"[{status}] PARSE {source!r}")
         print(f"       expected = {expected}, actual = {actual}")
@@ -104,8 +165,12 @@ def main():
     for source, expected in error_cases:
         total += 1
         errors = {}
-        parse(tokenize(source), errors)
-        actual = errors.get("message")
+        parse_program(tokenize(source), errors)
+        actual = (
+            errors.get("message"),
+            errors.get("token"),
+            errors.get("index", -1) + 1,
+        )
         status = "PASS" if actual == expected else "FAIL"
         print(f"[{status}] ERROR {source!r}")
         print(f"       expected = {expected}, actual = {actual}")
