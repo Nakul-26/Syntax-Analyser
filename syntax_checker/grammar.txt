@@ -5,6 +5,10 @@ Supported program forms:
 - statement_list
 - int main ( ) block
 
+Supported declaration:
+- int variable ;
+- float variable ;
+
 Supported condition:
 - variable relop variable
 - variable relop number
@@ -28,6 +32,7 @@ Supported statement_list:
 - epsilon
 
 Supported statements:
+- declaration
 - assignment
 - increment
 - if ( condition ) statement else_part
@@ -39,6 +44,7 @@ Supported else_part:
 - epsilon
 
 AST notes:
+- declarations store type and identifier as child nodes
 - assignments store target and expression as child nodes
 - binary operators become expression nodes such as +, -, *, /
 - conditions store the relational operator as the node value
