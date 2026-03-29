@@ -1,5 +1,5 @@
 from parser import parse, parse_if, parse_program, parse_while
-from tokenizer import tokenize
+from tokenizer import tokenize, tokenize_with_lines
 
 
 def run_case(kind, source, expected):
@@ -36,6 +36,13 @@ def run_program_artifacts(source):
     return tree, errors, context
 
 
+def run_program_with_lines(source, context=None):
+    tokens, line_numbers = tokenize_with_lines(source)
+    errors = {"line_numbers": line_numbers}
+    tree = parse_program(tokens, errors, context)
+    return tree, errors, context
+
+
 def main():
     tokenizer_expected = ["if", "(", "a", ">", "b", ")", "a", "=", "a", "+", "1", ";"]
     tokenizer_actual = tokenize("if(a>b) a=a+1;")
@@ -69,6 +76,14 @@ def main():
     print(f"       expected = {float_tokenizer_expected}")
     print(f"       actual   = {float_tokenizer_actual}")
 
+    identifier_tokenizer_expected = ["char", "_value1", ";", "_value1", "=", "(", "_value1", "+", "2", ")", "*", "3", ";"]
+    identifier_tokenizer_actual = tokenize("char _value1; _value1=(_value1+2)*3;")
+    identifier_tokenizer_ok = identifier_tokenizer_actual == identifier_tokenizer_expected
+
+    print("[PASS]" if identifier_tokenizer_ok else "[FAIL]", "TOKENIZER supports underscores and parentheses")
+    print(f"       expected = {identifier_tokenizer_expected}")
+    print(f"       actual   = {identifier_tokenizer_actual}")
+
     main_tokenizer_expected = [
         "int", "main", "(", ")", "{", "int", "i", ";", "while", "(", "i", "<", "10", ")", "{",
         "i", "=", "i", "+", "1", ";", "}", "}",
@@ -87,12 +102,13 @@ def main():
         ("if", "if(a>b) a=a+b;", True),
         ("if", "if(a>=b) a=a+1;", True),
         ("if", "if(a>b) a=a+b*5-c;", True),
+        ("if", "if((a+1)>(b*2)) a=(a+b)*(c-1);", True),
         ("if", "if(a>b){a=a+1;}else if(a<b){a=a+2;}else{a=a+3;}", True),
         ("while", "while(b<10) b++;", True),
         ("while", "while(x!=9) x++;", True),
         ("while", "while(b<10 b++;", False),
         ("while", "while(b<10) b=b+1;", True),
-        ("while", "while(7<b) b++;", False),
+        ("while", "while(7<b) b++;", True),
         ("if", "if(a>b){a=a+1;}", True),
         ("while", "while(b<10){b++;}", True),
     ]
@@ -106,14 +122,17 @@ def main():
         ("int a; float b; float c; if(a>b){ b=b+c*5.0; }else if(a<b){ a=a+2; }else{ c=c+3.5; }", True),
         ("int main(){ int a; int b; int i; if(a>b){ a=a+b*5; } while(i<10){ i=i+1; } }", True),
         ("int a; int b; if(a>b)\n{\n    a=a+1;\n    while(b<10)\n    {\n        b++;\n    }\n}", True),
+        ("char flag; int a; int b; if((a+1)>(b*2)){ { a=(a+b)*(a-1); } }", True),
+        ("{ int a; a=(3+4)*5; }", True),
     ]
 
     error_cases = [
         ("if(a>b { a=a+1; }", ("Missing ')'", "{", 6)),
         ("while(b<10){ b++ }", ("Expected ';'", "}", 10)),
-        ("if(>b){ a=a+1; }", ("Expected variable on left side of condition", ">", 3)),
+        ("if(>b){ a=a+1; }", ("Expected operand", ">", 3)),
         ("if(a>b) a=a+;", ("Expected operand", ";", 11)),
         ("int main(){ int a; int b; if(a>b){ a=a+1; }", ("Missing '}'", "<eof>", 26)),
+        ("int a; if((a+1)>b{ a=a+1; }", ("Missing ')'", "{", 13)),
     ]
 
     semantic_error_cases = [
@@ -122,11 +141,20 @@ def main():
         ("int a; a=b+1;", ("Variable 'b' not declared", "b", 6)),
         ("int a; int a;", ("Variable 'a' already declared", "a", 5)),
         ("int main(){ int a; if(a>b){ a=a+1; } }", ("Variable 'b' not declared", "b", 13)),
+        ("int a; if((a+1)>(b*2)){ a=a+1; }", ("Variable 'b' not declared", "b", 13)),
     ]
 
     type_error_cases = [
         ("int a; float b; a=b+1;", ("Type mismatch: cannot assign float to int", ";", 12)),
         ("int main(){ int a; float b; a=b+1; }", ("Type mismatch: cannot assign float to int", ";", 17)),
+    ]
+
+    recovery_source = "int a\na = ;\nif(a>b {\n    a = a + ;\n}\n"
+    recovery_expected = [
+        ("Expected ';'", "a", 2),
+        ("Missing ')'", "{", 3),
+        ("Expected operand", ";", 4),
+        ("Unexpected token", "}", 5),
     ]
 
     tree_source = "int main(){ int a; int b; int c; int i; if(a>b){ a=a+b*5-c; }else if(a<b){ a=a+2; }else{ a=a+3; } while(i<10){ i=i+1; } }"
@@ -202,7 +230,7 @@ def main():
     passed = 0
     total = 0
 
-    for ok in [tokenizer_ok, comment_ok, expr_tokenizer_ok, float_tokenizer_ok, main_tokenizer_ok]:
+    for ok in [tokenizer_ok, comment_ok, expr_tokenizer_ok, float_tokenizer_ok, identifier_tokenizer_ok, main_tokenizer_ok]:
         total += 1
         if ok:
             passed += 1
@@ -282,6 +310,19 @@ def main():
     print(f"       expected = {tac_expected}")
     print(f"       actual   = {actual_tac}")
     if tac_ok:
+        passed += 1
+
+    total += 1
+    recovery_tree, recovery_errors, _ = run_program_with_lines(recovery_source, None)
+    actual_recovery = [
+        (item.get("message"), item.get("token"), item.get("line"))
+        for item in recovery_errors.get("items", [])
+    ]
+    recovery_ok = recovery_tree is None and actual_recovery == recovery_expected
+    print(f"[{'PASS' if recovery_ok else 'FAIL'}] RECOVERY {recovery_source!r}")
+    print(f"       expected = {recovery_expected}")
+    print(f"       actual   = {actual_recovery}")
+    if recovery_ok:
         passed += 1
 
     print(f"\nSummary: {passed}/{total} tests passed")

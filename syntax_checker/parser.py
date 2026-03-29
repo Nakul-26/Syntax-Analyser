@@ -18,11 +18,17 @@ class Node:
         return lines
 
 
-DECLARATION_TYPES = {"int", "float"}
+DECLARATION_TYPES = {"int", "float", "char"}
+KEYWORDS = {"if", "else", "while", "int", "float", "char", "main"}
+SYNC_TOKENS = {";", "{", "}", ")"}
 
 
 def is_variable(token):
-    return token.isalpha()
+    if not token or token in KEYWORDS:
+        return False
+    if not (token[0].isalpha() or token[0] == "_"):
+        return False
+    return all(char.isalnum() or char == "_" for char in token)
 
 
 def is_int(token):
@@ -95,6 +101,8 @@ def get_token_type(context, token):
 def combine_types(left_type, right_type):
     if left_type == "float" or right_type == "float":
         return "float"
+    if left_type == "char" and right_type == "char":
+        return "char"
     return "int"
 
 
@@ -179,13 +187,57 @@ def generate_statement_code(node, context):
 
 
 def set_error(errors, index, message, tokens=None):
-    if errors is None or "message" in errors:
+    if errors is None:
         return
 
     token = "<eof>" if tokens is None or index >= len(tokens) else tokens[index]
-    errors["index"] = index
-    errors["token"] = token
-    errors["message"] = message
+    line_numbers = errors.get("line_numbers", [])
+    line = None
+    if 0 <= index < len(line_numbers):
+        line = line_numbers[index]
+
+    item = {
+        "index": index,
+        "token": token,
+        "line": line,
+        "message": message,
+    }
+    errors.setdefault("items", []).append(item)
+
+    if "message" not in errors:
+        errors["index"] = index
+        errors["token"] = token
+        errors["line"] = line
+        errors["message"] = message
+
+
+def has_recorded_errors(errors):
+    return errors is not None and bool(errors.get("items"))
+
+
+def get_last_error_index(errors, fallback_index):
+    if errors is None:
+        return fallback_index
+    items = errors.get("items", [])
+    if not items:
+        return fallback_index
+    last_index = items[-1].get("index", fallback_index)
+    if last_index is None or last_index < fallback_index:
+        return fallback_index
+    return last_index
+
+
+def recover_to_sync(tokens, start_index):
+    i = max(0, start_index)
+
+    while i < len(tokens) and tokens[i] not in SYNC_TOKENS:
+        i += 1
+
+    if i < len(tokens):
+        if tokens[i] == "{":
+            return max(i, start_index + 1)
+        return max(i + 1, start_index + 1)
+    return len(tokens)
 
 
 def parse_condition(tokens, i, errors=None, context=None):
@@ -195,15 +247,10 @@ def parse_condition(tokens, i, errors=None, context=None):
         set_error(errors, i, "Expected condition", tokens)
         return -1, None
 
-    if not is_variable(tokens[i]):
-        set_error(errors, i, "Expected variable on left side of condition", tokens)
+    i, left = parse_expr(tokens, i, errors, context)
+    if i == -1:
+        set_error(errors, i, "Expected expression on left side of condition", tokens)
         return -1, None
-    if semantic_enabled(context) and not is_declared(context, tokens[i]):
-        set_error(errors, i, f"Variable '{tokens[i]}' not declared", tokens)
-        return -1, None
-
-    left = make_identifier(tokens[i])
-    i += 1
 
     if i >= len(tokens) or not is_relop(tokens[i]):
         set_error(errors, i, "Expected relational operator", tokens)
@@ -212,25 +259,15 @@ def parse_condition(tokens, i, errors=None, context=None):
     op = tokens[i]
     i += 1
 
-    if i >= len(tokens):
-        set_error(errors, i, "Expected right side of condition", tokens)
-        return -1, None
-
-    if is_variable(tokens[i]):
-        if semantic_enabled(context) and not is_declared(context, tokens[i]):
-            set_error(errors, i, f"Variable '{tokens[i]}' not declared", tokens)
-            return -1, None
-        right = make_identifier(tokens[i])
-    elif is_number(tokens[i]):
-        right = make_number(tokens[i])
-    else:
-        set_error(errors, i, "Expected variable or number on right side of condition", tokens)
+    i, right = parse_expr(tokens, i, errors, context)
+    if i == -1:
+        set_error(errors, i, "Expected expression on right side of condition", tokens)
         return -1, None
 
     condition = Node("CONDITION", op)
     condition.add(left)
     condition.add(right)
-    return i + 1, condition
+    return i, condition
 
 
 def parse_factor(tokens, i, errors=None, context=None):
@@ -248,6 +285,15 @@ def parse_factor(tokens, i, errors=None, context=None):
 
     if is_number(tokens[i]):
         return i + 1, make_number(tokens[i])
+
+    if tokens[i] == "(":
+        i, expr = parse_expr(tokens, i + 1, errors, context)
+        if i == -1:
+            return -1, None
+        if i >= len(tokens) or tokens[i] != ")":
+            set_error(errors, i, "Missing ')'", tokens)
+            return -1, None
+        return i + 1, expr
 
     set_error(errors, i, "Expected operand", tokens)
     return -1, None
@@ -531,6 +577,9 @@ def parse_statement(tokens, i, errors=None, context=None):
     if tokens[i] == "while":
         return parse_while(tokens, i, errors, context)
 
+    if tokens[i] == "{":
+        return parse_block(tokens, i, errors, context)
+
     if i + 1 < len(tokens) and tokens[i + 1] == "=":
         return parse_assignment(tokens, i, errors, context)
 
@@ -550,11 +599,13 @@ def parse(tokens, errors=None, context=None):
 
     i = 0
     while i < len(tokens):
-        i, _ = parse_statement(tokens, i, errors, context)
-        if i == -1:
-            return False
+        next_i, _ = parse_statement(tokens, i, errors, context)
+        if next_i == -1:
+            i = recover_to_sync(tokens, get_last_error_index(errors, i))
+            continue
+        i = next_i
 
-    return True
+    return not has_recorded_errors(errors)
 
 
 def parse_main(tokens, i, errors=None, context=None):
@@ -602,17 +653,31 @@ def parse_program(tokens, errors=None, context=None):
     if len(tokens) >= 2 and tokens[0] == "int" and tokens[1] == "main":
         i, main_node = parse_main(tokens, 0, errors, context)
         if i == -1:
-            return None
-        program.add(main_node)
+            i = recover_to_sync(tokens, get_last_error_index(errors, 0))
+        elif main_node is not None:
+            program.add(main_node)
+
+        while i < len(tokens):
+            next_i, statement = parse_statement(tokens, i, errors, context)
+            if next_i == -1:
+                i = recover_to_sync(tokens, get_last_error_index(errors, i))
+                continue
+            program.add(statement)
+            i = next_i
     else:
         while i < len(tokens):
-            i, statement = parse_statement(tokens, i, errors, context)
-            if i == -1:
-                return None
+            next_i, statement = parse_statement(tokens, i, errors, context)
+            if next_i == -1:
+                i = recover_to_sync(tokens, get_last_error_index(errors, i))
+                continue
             program.add(statement)
+            i = next_i
 
     if i != len(tokens):
         set_error(errors, i, "Unexpected token after program end", tokens)
+        return None
+
+    if has_recorded_errors(errors):
         return None
 
     if context is not None:

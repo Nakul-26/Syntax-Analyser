@@ -1,47 +1,52 @@
-Control Statement Grammar
-=========================
+General C-like Syntax Grammar
+=============================
 
 Supported program forms:
-- statement_list
-- int main ( ) block
-
-Supported declaration:
-- int variable ;
-- float variable ;
-
-Supported condition:
-- variable relop variable
-- variable relop number
-
-Supported assignment:
-- variable = expression ;
-
-Supported expression:
-- expr -> term ((+ | -) term)*
-- term -> factor ((* | /) factor)*
-- factor -> variable | number
-
-Supported increment:
-- variable ++ ;
-
-Supported blocks:
-- { statement_list }
-
-Supported statement_list:
-- statement statement_list
-- epsilon
+- program -> statement_list
+- program -> int main ( ) block
+- statement_list -> statement statement_list | epsilon
 
 Supported statements:
 - declaration
 - assignment
 - increment
-- if ( condition ) statement else_part
-- while ( condition ) statement
+- if_stmt
+- while_stmt
 - block
 
-Supported else_part:
-- else statement
-- epsilon
+Supported declaration:
+- type variable ;
+- type -> int | float | char
+
+Supported assignment:
+- variable = expr ;
+
+Supported increment:
+- variable ++ ;
+
+Supported block:
+- { statement_list }
+
+Supported if:
+- if ( condition ) statement else_part
+- else_part -> else statement | epsilon
+
+Supported while:
+- while ( condition ) statement
+
+Supported condition:
+- expr relop expr
+- relop -> > | < | >= | <= | == | !=
+
+Supported expression:
+- expr -> term ((+ | -) term)*
+- term -> factor ((* | /) factor)*
+- factor -> variable | number | ( expr )
+
+Identifier notes:
+- identifiers may start with a letter or underscore
+- identifiers may contain letters, digits, and underscores
+- reserved keywords are not treated as identifiers
 
 AST notes:
 - declarations store type and identifier as child nodes
