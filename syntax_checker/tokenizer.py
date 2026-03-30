@@ -1,7 +1,7 @@
 import re
 
 
-TOKEN_PATTERN = r"\d+\.\d+|\w+|\+\+|==|!=|<=|>=|[(){};=+\-*/<>]"
+TOKEN_PATTERN = r"\d+\.\d+|\w+|\+\+|==|!=|<=|>=|[(),{};=+\-*/<>]"
 
 
 def tokenize(line):

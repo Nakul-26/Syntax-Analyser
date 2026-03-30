@@ -95,6 +95,14 @@ def main():
     print(f"       expected = {main_tokenizer_expected}")
     print(f"       actual   = {main_tokenizer_actual}")
 
+    call_tokenizer_expected = ["result", "=", "add", "(", "x", ",", "2", ")", ";"]
+    call_tokenizer_actual = tokenize("result=add(x,2);")
+    call_tokenizer_ok = call_tokenizer_actual == call_tokenizer_expected
+
+    print("[PASS]" if call_tokenizer_ok else "[FAIL]", "TOKENIZER supports function call commas")
+    print(f"       expected = {call_tokenizer_expected}")
+    print(f"       actual   = {call_tokenizer_actual}")
+
     cases = [
         ("if", "if(a>b) a=a+1;", True),
         ("if", "if(a>5) a=a+1;", True),
@@ -111,6 +119,7 @@ def main():
         ("while", "while(7<b) b++;", True),
         ("if", "if(a>b){a=a+1;}", True),
         ("while", "while(b<10){b++;}", True),
+        ("while", "while(b<10){continue;}", True),
     ]
 
     parse_cases = [
@@ -124,6 +133,17 @@ def main():
         ("int a; int b; if(a>b)\n{\n    a=a+1;\n    while(b<10)\n    {\n        b++;\n    }\n}", True),
         ("char flag; int a; int b; if((a+1)>(b*2)){ { a=(a+b)*(a-1); } }", True),
         ("{ int a; a=(3+4)*5; }", True),
+        ("int i; for(i=0; i<10; i++){ i=i+1; }", True),
+        ("int x; int y; x=add(y,2); print(x);", True),
+        ("int main(){ int i; for(i=0; i<10; i++){ continue; } return 0; }", True),
+        ("int b; while(b<10){ break; }", True),
+        ("int add(int a, int b){ return a+b; } int main(){ int x; x=add(5,10); return x; }", True),
+        ("int inc(int a){ return a+1; } int dbl(int b){ return inc(b)+inc(b); } int main(){ int x; x=dbl(3); return x; }", True),
+        ("int sum(int a, int b, int c){ return a+b+c; } int main(){ int x; x=sum(1,2,3); return x; }", True),
+        ("int main(){ int i; for(; i<10; i++){ print(i); } return 0; }", True),
+        ("int main(){ int i; for(i=0; i<10; ){ i++; } return 0; }", True),
+        ("int main(){ int x; x=add(mul(2,3),inc(4)); return x; }", True),
+        ("int add(int a, int b){ return a+b; } int main(){ return add(add(1,2), add(3,4)); }", True),
     ]
 
     error_cases = [
@@ -133,6 +153,15 @@ def main():
         ("if(a>b) a=a+;", ("Expected operand", ";", 11)),
         ("int main(){ int a; int b; if(a>b){ a=a+1; }", ("Missing '}'", "<eof>", 26)),
         ("int a; if((a+1)>b{ a=a+1; }", ("Missing ')'", "{", 13)),
+        ("for(i=0 i<10; i++){ i=i+1; }", ("Expected ';' after for initializer", "i", 6)),
+        ("return 0", ("Expected ';'", "<eof>", 3)),
+        ("foo(1,);", ("Expected operand", ")", 5)),
+        ("int add(int a float b){ return a+b; }", ("Missing ')'", "float", 6)),
+        ("int add(int a,){ return a; }", ("Expected parameter type", ")", 6)),
+        ("int add(, int b){ return b; }", ("Expected parameter type", ",", 4)),
+        ("int main(){ int x; x=add((1+2); return x; }", ("Missing ')'", ";", 12)),
+        ("int main(){ for(i=0; i<10 i++){ i++; } }", ("Expected ';' after for condition", "i", 10)),
+        ("int main(){ return add(1 2); }", ("Missing ')' in function call", "2", 10)),
     ]
 
     semantic_error_cases = [
@@ -149,6 +178,11 @@ def main():
         ("int main(){ int a; float b; a=b+1; }", ("Type mismatch: cannot assign float to int", ";", 17)),
     ]
 
+    stress_error_cases = [
+        ("int main(){ break; }", ("break outside loop accepted by current grammar", True)),
+        ("int main(){ continue; }", ("continue outside loop accepted by current grammar", True)),
+    ]
+
     recovery_source = "int a\na = ;\nif(a>b {\n    a = a + ;\n}\n"
     recovery_expected = [
         ("Expected ';'", "a", 2),
@@ -157,10 +191,21 @@ def main():
         ("Unexpected token", "}", 5),
     ]
 
+    nested_recovery_source = "int main(){\n    int a;\n    if(a>0){\n        a = ;\n        a++;\n    }\n}\n"
+    nested_recovery_expected = [
+        ("Expected operand", ";", 4),
+    ]
+
+    block_recovery_source = "{\n    int a\n    a = 1;\n    a++;\n}\n"
+    block_recovery_expected = [
+        ("Expected ';'", "a", 3),
+    ]
+
     tree_source = "int main(){ int a; int b; int c; int i; if(a>b){ a=a+b*5-c; }else if(a<b){ a=a+2; }else{ a=a+3; } while(i<10){ i=i+1; } }"
     tree_expected = [
         "PROGRAM",
-        "  MAIN",
+        "  FUNCTION (main)",
+        "    TYPE (int)",
         "    BLOCK",
         "      DECL (int)",
         "        TYPE (int)",
@@ -230,7 +275,7 @@ def main():
     passed = 0
     total = 0
 
-    for ok in [tokenizer_ok, comment_ok, expr_tokenizer_ok, float_tokenizer_ok, identifier_tokenizer_ok, main_tokenizer_ok]:
+    for ok in [tokenizer_ok, comment_ok, expr_tokenizer_ok, float_tokenizer_ok, identifier_tokenizer_ok, main_tokenizer_ok, call_tokenizer_ok]:
         total += 1
         if ok:
             passed += 1
@@ -324,6 +369,44 @@ def main():
     print(f"       actual   = {actual_recovery}")
     if recovery_ok:
         passed += 1
+
+    total += 1
+    nested_recovery_tree, nested_recovery_errors, _ = run_program_with_lines(nested_recovery_source, {"symbol_table": {}})
+    actual_nested_recovery = [
+        (item.get("message"), item.get("token"), item.get("line"))
+        for item in nested_recovery_errors.get("items", [])
+    ]
+    nested_recovery_ok = nested_recovery_tree is None and actual_nested_recovery == nested_recovery_expected
+    print(f"[{'PASS' if nested_recovery_ok else 'FAIL'}] NESTED RECOVERY {nested_recovery_source!r}")
+    print(f"       expected = {nested_recovery_expected}")
+    print(f"       actual   = {actual_nested_recovery}")
+    if nested_recovery_ok:
+        passed += 1
+
+    total += 1
+    block_recovery_tree, block_recovery_errors, _ = run_program_with_lines(block_recovery_source, None)
+    actual_block_recovery = [
+        (item.get("message"), item.get("token"), item.get("line"))
+        for item in block_recovery_errors.get("items", [])
+    ]
+    block_recovery_ok = block_recovery_tree is None and actual_block_recovery == block_recovery_expected
+    print(f"[{'PASS' if block_recovery_ok else 'FAIL'}] BLOCK RECOVERY {block_recovery_source!r}")
+    print(f"       expected = {block_recovery_expected}")
+    print(f"       actual   = {actual_block_recovery}")
+    if block_recovery_ok:
+        passed += 1
+
+    for source, expected in stress_error_cases:
+        total += 1
+        errors = {}
+        context = {"symbol_table": {}}
+        actual = parse_program(tokenize(source), errors, context) is not None
+        status = "PASS" if actual == expected[1] else "FAIL"
+        print(f"[{status}] STRESS {source!r}")
+        print(f"       note     = {expected[0]}")
+        print(f"       accepted = {actual}")
+        if actual == expected[1]:
+            passed += 1
 
     print(f"\nSummary: {passed}/{total} tests passed")
 
