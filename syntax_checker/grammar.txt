@@ -12,14 +12,23 @@ Supported statements:
 - increment
 - if_stmt
 - while_stmt
+- do_while_stmt
+- for_stmt
+- return_stmt
+- break_stmt
+- continue_stmt
+- function_call
 - block
 
 Supported declaration:
-- type variable ;
+- type decl_list ;
 - type -> int | float | char
+- decl_list -> decl_item (, decl_item)*
+- decl_item -> variable | variable = expr | variable [ number ]
 
 Supported assignment:
 - variable = expr ;
+- variable [ expr ] = expr ;
 
 Supported increment:
 - variable ++ ;
@@ -34,14 +43,29 @@ Supported if:
 Supported while:
 - while ( condition ) statement
 
+Supported do-while:
+- do statement while ( condition ) ;
+
+Supported for:
+- for ( assignment_core? ; condition? ; (increment_core | assignment_core)? ) statement
+
 Supported condition:
-- expr relop expr
+- logical_or
+- logical_or -> logical_and (|| logical_and)*
+- logical_and -> relation (&& relation)*
+- relation -> expr relop expr | ( condition )
 - relop -> > | < | >= | <= | == | !=
 
 Supported expression:
 - expr -> term ((+ | -) term)*
 - term -> factor ((* | /) factor)*
-- factor -> variable | number | ( expr )
+- factor -> variable | variable [ expr ] | function_call | number | ( expr )
+
+Supported functions:
+- function_def -> type function_name ( parameter_list ) block
+- parameter_list -> (type variable (, type variable)*)?
+- function_call -> function_name ( argument_list )
+- argument_list -> (expr (, expr)*)?
 
 Identifier notes:
 - identifiers may start with a letter or underscore
@@ -50,6 +74,8 @@ Identifier notes:
 
 AST notes:
 - declarations store type and identifier as child nodes
+- declaration groups are used for comma-separated declarations
 - assignments store target and expression as child nodes
 - binary operators become expression nodes such as +, -, *, /
 - conditions store the relational operator as the node value
+- logical operators are stored as LOGICAL_OP nodes

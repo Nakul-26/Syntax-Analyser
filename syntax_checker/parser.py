@@ -19,7 +19,7 @@ class Node:
 
 
 DECLARATION_TYPES = {"int", "float", "char"}
-KEYWORDS = {"if", "else", "while", "for", "return", "break", "continue", "int", "float", "char", "main"}
+KEYWORDS = {"if", "else", "while", "for", "do", "return", "break", "continue", "int", "float", "char", "main"}
 SYNC_TOKENS = {";", "{", "}", ")"}
 
 
@@ -63,6 +63,10 @@ def make_type(value):
     return Node("TYPE", value)
 
 
+def make_array_size(value):
+    return Node("SIZE", value)
+
+
 def semantic_enabled(context):
     return context is not None and "symbol_table" in context
 
@@ -78,16 +82,25 @@ def initialize_context(context):
     return context
 
 
-def declare_variable(context, name, var_type):
+def make_symbol_entry(var_type, is_array=False, array_size=None):
+    return {
+        "type": var_type,
+        "is_array": is_array,
+        "size": array_size,
+    }
+
+
+def declare_variable(context, name, var_type, is_array=False, array_size=None):
     if context is None:
         return
 
-    current_scope(context)[name] = var_type
-    context["symbol_table"][name] = var_type
+    entry = make_symbol_entry(var_type, is_array=is_array, array_size=array_size)
+    current_scope(context)[name] = entry
+    context["symbol_table"][name] = entry
 
 
 def is_declared(context, name):
-    return lookup_variable_type(context, name) is not None
+    return lookup_variable_entry(context, name) is not None
 
 
 def current_scope(context):
@@ -113,6 +126,13 @@ def pop_scope(context):
 
 
 def lookup_variable_type(context, name):
+    entry = lookup_variable_entry(context, name)
+    if entry is None:
+        return None
+    return entry["type"]
+
+
+def lookup_variable_entry(context, name):
     if context is None:
         return None
 
@@ -131,6 +151,11 @@ def is_declared_in_current_scope(context, name):
 
 def is_function_name(token):
     return token == "main" or is_variable(token)
+
+
+def is_array_variable(context, name):
+    entry = lookup_variable_entry(context, name)
+    return entry is not None and entry.get("is_array", False)
 
 
 def get_token_type(context, token):
@@ -161,6 +186,9 @@ def infer_node_type(node, context):
     if node.type == "IDENT":
         return lookup_variable_type(context, node.value)
 
+    if node.type == "ARRAY_ACCESS":
+        return lookup_variable_type(context, node.value)
+
     if node.type == "NUMBER":
         return "float" if is_float(node.value) else "int"
 
@@ -188,6 +216,11 @@ def new_temp(context):
 def generate_expr_code(node, context):
     if node.type in ["IDENT", "NUMBER"]:
         return [], node.value
+
+    if node.type == "ARRAY_ACCESS":
+        index_code, index_name = generate_expr_code(node.children[0], context)
+        temp = new_temp(context)
+        return index_code + [f"{temp} = {node.value}[{index_name}]"], temp
 
     if node.type == "CALL":
         arg_code = []
@@ -217,7 +250,7 @@ def generate_statement_code(node, context):
     if node.type == "FUNCTION":
         return generate_statement_code(node.children[-1], context)
 
-    if node.type in ["MAIN", "BLOCK", "ELSE"]:
+    if node.type in ["MAIN", "BLOCK", "ELSE", "DECL_GROUP"]:
         code = []
         for child in node.children:
             code.extend(generate_statement_code(child, context))
@@ -228,8 +261,11 @@ def generate_statement_code(node, context):
 
     if node.type == "ASSIGN":
         expr_code, result_name = generate_expr_code(node.children[1], context)
-        target = node.children[0].value
-        return expr_code + [f"{target} = {result_name}"]
+        target_node = node.children[0]
+        if target_node.type == "ARRAY_ACCESS":
+            index_code, index_name = generate_expr_code(target_node.children[0], context)
+            return index_code + expr_code + [f"{target_node.value}[{index_name}] = {result_name}"]
+        return expr_code + [f"{target_node.value} = {result_name}"]
 
     if node.type == "INCREMENT":
         target = node.children[0].value
@@ -258,6 +294,9 @@ def generate_statement_code(node, context):
 
     if node.type == "WHILE":
         return generate_statement_code(node.children[1], context)
+
+    if node.type == "DO_WHILE":
+        return generate_statement_code(node.children[0], context)
 
     if node.type == "FOR":
         code = []
@@ -332,33 +371,127 @@ def recover_statement(tokens, errors, start_index, block_terminators=None):
 
 
 def parse_condition(tokens, i, errors=None, context=None):
+    return parse_logical_or(tokens, i, errors, context)
+
+
+def parse_logical_or(tokens, i, errors=None, context=None):
+    i, node = parse_logical_and(tokens, i, errors, context)
+    if i == -1:
+        return -1, None
+
+    while i < len(tokens) and tokens[i] == "||":
+        op = tokens[i]
+        i += 1
+        i, right = parse_logical_and(tokens, i, errors, context)
+        if i == -1:
+            return -1, None
+        logical = Node("LOGICAL_OP", op)
+        logical.add(node)
+        logical.add(right)
+        node = logical
+
+    return i, node
+
+
+def parse_logical_and(tokens, i, errors=None, context=None):
+    i, node = parse_relation(tokens, i, errors, context)
+    if i == -1:
+        return -1, None
+
+    while i < len(tokens) and tokens[i] == "&&":
+        op = tokens[i]
+        i += 1
+        i, right = parse_relation(tokens, i, errors, context)
+        if i == -1:
+            return -1, None
+        logical = Node("LOGICAL_OP", op)
+        logical.add(node)
+        logical.add(right)
+        node = logical
+
+    return i, node
+
+
+def parse_relation(tokens, i, errors=None, context=None):
     initialize_context(context)
 
     if i >= len(tokens):
         set_error(errors, i, "Expected condition", tokens)
         return -1, None
 
-    i, left = parse_expr(tokens, i, errors, context)
-    if i == -1:
-        set_error(errors, i, "Expected expression on left side of condition", tokens)
+    probe_i, left = parse_expr(tokens, i, None, context)
+    if probe_i != -1 and probe_i < len(tokens) and is_relop(tokens[probe_i]):
+        i = probe_i
+        op = tokens[i]
+        i += 1
+
+        i, right = parse_expr(tokens, i, errors, context)
+        if i == -1:
+            set_error(errors, i, "Expected expression on right side of condition", tokens)
+            return -1, None
+
+        condition = Node("CONDITION", op)
+        condition.add(left)
+        condition.add(right)
+        return i, condition
+
+    if tokens[i] == "(":
+        i += 1
+        i, node = parse_condition(tokens, i, errors, context)
+        if i == -1:
+            return -1, None
+        if i >= len(tokens) or tokens[i] != ")":
+            set_error(errors, i, "Missing ')'", tokens)
+            return -1, None
+        return i + 1, node
+
+    if probe_i == -1:
+        parse_expr(tokens, i, errors, context)
         return -1, None
 
-    if i >= len(tokens) or not is_relop(tokens[i]):
-        set_error(errors, i, "Expected relational operator", tokens)
+    set_error(errors, i, "Expected relational operator", tokens)
+    return -1, None
+
+
+def parse_array_access(tokens, i, errors=None, context=None):
+    initialize_context(context)
+
+    if i >= len(tokens) or not is_variable(tokens[i]):
+        set_error(errors, i, "Expected array name", tokens)
         return -1, None
 
-    op = tokens[i]
+    name = tokens[i]
+    if semantic_enabled(context):
+        if not is_declared(context, name):
+            set_error(errors, i, f"Variable '{name}' not declared", tokens)
+            return -1, None
+        if not is_array_variable(context, name):
+            set_error(errors, i, f"Variable '{name}' is not an array", tokens)
+            return -1, None
     i += 1
 
-    i, right = parse_expr(tokens, i, errors, context)
+    if i >= len(tokens) or tokens[i] != "[":
+        set_error(errors, i, "Missing '[' in array access", tokens)
+        return -1, None
+    i += 1
+
+    i, index_expr = parse_expr(tokens, i, errors, context)
     if i == -1:
-        set_error(errors, i, "Expected expression on right side of condition", tokens)
         return -1, None
 
-    condition = Node("CONDITION", op)
-    condition.add(left)
-    condition.add(right)
-    return i, condition
+    if semantic_enabled(context):
+        index_type = infer_node_type(index_expr, context)
+        if index_type not in ["int", "char"]:
+            set_error(errors, i, "Array index must be an integer expression", tokens)
+            return -1, None
+
+    if i >= len(tokens) or tokens[i] != "]":
+        set_error(errors, i, "Missing ']'", tokens)
+        return -1, None
+
+    node = Node("ARRAY_ACCESS", name)
+    node.add(index_expr)
+    return i + 1, node
 
 
 def parse_factor(tokens, i, errors=None, context=None):
@@ -371,8 +504,13 @@ def parse_factor(tokens, i, errors=None, context=None):
     if is_variable(tokens[i]):
         if i + 1 < len(tokens) and tokens[i + 1] == "(":
             return parse_call_expression(tokens, i, errors, context)
+        if i + 1 < len(tokens) and tokens[i + 1] == "[":
+            return parse_array_access(tokens, i, errors, context)
         if semantic_enabled(context) and not is_declared(context, tokens[i]):
             set_error(errors, i, f"Variable '{tokens[i]}' not declared", tokens)
+            return -1, None
+        if semantic_enabled(context) and is_array_variable(context, tokens[i]):
+            set_error(errors, i, f"Array '{tokens[i]}' requires an index", tokens)
             return -1, None
         return i + 1, make_identifier(tokens[i])
 
@@ -452,14 +590,23 @@ def parse_assignment_core(tokens, i, errors=None, context=None):
     if i >= len(tokens) or not is_variable(tokens[i]):
         set_error(errors, i, "Expected assignment target", tokens)
         return -1, None
-    if semantic_enabled(context) and not is_declared(context, tokens[i]):
-        set_error(errors, i, f"Variable '{tokens[i]}' not declared", tokens)
-        return -1, None
 
-    target_name = tokens[i]
     assignment = Node("ASSIGN")
-    assignment.add(make_identifier(target_name))
-    i += 1
+    target_name = tokens[i]
+    if i + 1 < len(tokens) and tokens[i + 1] == "[":
+        i, target = parse_array_access(tokens, i, errors, context)
+        if i == -1:
+            return -1, None
+    else:
+        if semantic_enabled(context) and not is_declared(context, target_name):
+            set_error(errors, i, f"Variable '{target_name}' not declared", tokens)
+            return -1, None
+        if semantic_enabled(context) and is_array_variable(context, target_name):
+            set_error(errors, i, f"Array '{target_name}' requires an index", tokens)
+            return -1, None
+        target = make_identifier(target_name)
+        i += 1
+    assignment.add(target)
 
     if i >= len(tokens) or tokens[i] != "=":
         set_error(errors, i, "Expected '='", tokens)
@@ -472,7 +619,7 @@ def parse_assignment_core(tokens, i, errors=None, context=None):
     assignment.add(expr)
 
     if semantic_enabled(context):
-        target_type = context["symbol_table"][target_name]
+        target_type = lookup_variable_type(context, target_name)
         expr_type = infer_node_type(expr, context)
         if expr_type is None:
             set_error(errors, i, "Unable to infer expression type", tokens)
@@ -630,6 +777,47 @@ def parse_continue(tokens, i, errors=None, context=None):
         return -1, None
 
     return i + 1, Node("CONTINUE")
+
+
+def parse_do_while(tokens, i, errors=None, context=None):
+    initialize_context(context)
+
+    if i >= len(tokens) or tokens[i] != "do":
+        set_error(errors, i, "Expected 'do'", tokens)
+        return -1, None
+    i += 1
+
+    i, body = parse_statement(tokens, i, errors, context)
+    if i == -1:
+        return -1, None
+
+    if i >= len(tokens) or tokens[i] != "while":
+        set_error(errors, i, "Expected 'while'", tokens)
+        return -1, None
+    i += 1
+
+    if i >= len(tokens) or tokens[i] != "(":
+        set_error(errors, i, "Missing '(' after while", tokens)
+        return -1, None
+    i += 1
+
+    i, condition = parse_condition(tokens, i, errors, context)
+    if i == -1:
+        return -1, None
+
+    if i >= len(tokens) or tokens[i] != ")":
+        set_error(errors, i, "Missing ')'", tokens)
+        return -1, None
+    i += 1
+
+    if i >= len(tokens) or tokens[i] != ";":
+        set_error(errors, i, "Expected ';'", tokens)
+        return -1, None
+
+    node = Node("DO_WHILE")
+    node.add(body)
+    node.add(condition)
+    return i + 1, node
 
 
 def parse_for(tokens, i=0, errors=None, context=None):
@@ -834,25 +1022,79 @@ def parse_declaration(tokens, i, errors=None, context=None):
     var_type = tokens[i]
     i += 1
 
-    if i >= len(tokens) or not is_variable(tokens[i]):
-        set_error(errors, i, "Expected variable name", tokens)
-        return -1, None
-    if semantic_enabled(context) and is_declared_in_current_scope(context, tokens[i]):
-        set_error(errors, i, f"Variable '{tokens[i]}' already declared", tokens)
-        return -1, None
+    declarations = []
 
-    name = tokens[i]
-    declaration = Node("DECL", var_type)
-    declaration.add(make_type(var_type))
-    declaration.add(make_identifier(name))
-    i += 1
+    while True:
+        if i >= len(tokens) or not is_variable(tokens[i]):
+            set_error(errors, i, "Expected variable name", tokens)
+            return -1, None
+        if semantic_enabled(context) and is_declared_in_current_scope(context, tokens[i]):
+            set_error(errors, i, f"Variable '{tokens[i]}' already declared", tokens)
+            return -1, None
+
+        name = tokens[i]
+        declaration = Node("DECL", var_type)
+        declaration.add(make_type(var_type))
+        declaration.add(make_identifier(name))
+        i += 1
+
+        is_array = False
+        array_size = None
+        if i < len(tokens) and tokens[i] == "[":
+            is_array = True
+            i += 1
+            if i >= len(tokens) or not is_int(tokens[i]):
+                set_error(errors, i, "Array size must be an integer literal", tokens)
+                return -1, None
+            array_size = tokens[i]
+            declaration.add(make_array_size(array_size))
+            i += 1
+            if i >= len(tokens) or tokens[i] != "]":
+                set_error(errors, i, "Missing ']'", tokens)
+                return -1, None
+            i += 1
+
+        declare_variable(context, name, var_type, is_array=is_array, array_size=array_size)
+
+        if i < len(tokens) and tokens[i] == "=":
+            if is_array:
+                set_error(errors, i, "Array initialization is not supported", tokens)
+                return -1, None
+            i += 1
+            i, expr = parse_expr(tokens, i, errors, context)
+            if i == -1:
+                return -1, None
+
+            expr_type = infer_node_type(expr, context)
+            if semantic_enabled(context) and expr_type is None:
+                set_error(errors, i, "Unable to infer expression type", tokens)
+                return -1, None
+            if semantic_enabled(context) and not is_assignment_compatible(var_type, expr_type):
+                set_error(errors, i, f"Type mismatch: cannot assign {expr_type} to {var_type}", tokens)
+                return -1, None
+
+            init_node = Node("INIT")
+            init_node.add(expr)
+            declaration.add(init_node)
+
+        declarations.append(declaration)
+
+        if i < len(tokens) and tokens[i] == ",":
+            i += 1
+            continue
+        break
 
     if i >= len(tokens) or tokens[i] != ";":
         set_error(errors, i, "Expected ';'", tokens)
         return -1, None
 
-    declare_variable(context, name, var_type)
-    return i + 1, declaration
+    if len(declarations) == 1:
+        return i + 1, declarations[0]
+
+    group = Node("DECL_GROUP")
+    for declaration in declarations:
+        group.add(declaration)
+    return i + 1, group
 
 
 def parse_statement(tokens, i, errors=None, context=None):
@@ -874,6 +1116,9 @@ def parse_statement(tokens, i, errors=None, context=None):
     if tokens[i] == "for":
         return parse_for(tokens, i, errors, context)
 
+    if tokens[i] == "do":
+        return parse_do_while(tokens, i, errors, context)
+
     if tokens[i] == "return":
         return parse_return(tokens, i, errors, context)
 
@@ -885,6 +1130,9 @@ def parse_statement(tokens, i, errors=None, context=None):
 
     if tokens[i] == "{":
         return parse_block(tokens, i, errors, context)
+
+    if i + 1 < len(tokens) and tokens[i + 1] == "[":
+        return parse_assignment(tokens, i, errors, context)
 
     if i + 1 < len(tokens) and tokens[i + 1] == "=":
         return parse_assignment(tokens, i, errors, context)

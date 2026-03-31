@@ -28,7 +28,13 @@ def main():
     print("Type Safe")
 
     print("\nSymbol Table:")
-    for name, var_type in context["symbol_table"].items():
+    for name, entry in context["symbol_table"].items():
+        if isinstance(entry, dict):
+            var_type = entry["type"]
+            if entry.get("is_array"):
+                var_type = f"{var_type}[{entry.get('size')}]"
+        else:
+            var_type = entry
         print(f"{name}\t{var_type}")
 
     print("\nIntermediate Code:")

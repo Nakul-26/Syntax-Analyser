@@ -103,6 +103,14 @@ def main():
     print(f"       expected = {call_tokenizer_expected}")
     print(f"       actual   = {call_tokenizer_actual}")
 
+    array_logic_tokenizer_expected = ["int", "arr", "[", "10", "]", ";", "if", "(", "(", "a", "<", "b", ")", "&&", "(", "b", "<", "20", ")", ")", "{", "do", "{", "a", "++", ";", "}", "while", "(", "a", ">", "0", ")", ";", "}"]
+    array_logic_tokenizer_actual = tokenize("int arr[10]; if((a<b)&&(b<20)){ do{ a++; }while(a>0); }")
+    array_logic_tokenizer_ok = array_logic_tokenizer_actual == array_logic_tokenizer_expected
+
+    print("[PASS]" if array_logic_tokenizer_ok else "[FAIL]", "TOKENIZER supports arrays, logical ops, and do-while")
+    print(f"       expected = {array_logic_tokenizer_expected}")
+    print(f"       actual   = {array_logic_tokenizer_actual}")
+
     cases = [
         ("if", "if(a>b) a=a+1;", True),
         ("if", "if(a>5) a=a+1;", True),
@@ -144,6 +152,11 @@ def main():
         ("int main(){ int i; for(i=0; i<10; ){ i++; } return 0; }", True),
         ("int main(){ int x; x=add(mul(2,3),inc(4)); return x; }", True),
         ("int add(int a, int b){ return a+b; } int main(){ return add(add(1,2), add(3,4)); }", True),
+        ("int main(){ int a=5, b=10; return a+b; }", True),
+        ("int main(){ int arr[10]; int i=0; arr[0]=5; i=arr[0]+2; return i; }", True),
+        ("int main(){ int a=5, b=10; if((a<b)&&(b<20)){ a++; } return a; }", True),
+        ("int main(){ int a=3; do{ a=a-1; }while(a>0); return a; }", True),
+        ("int main(){ int a = 5, b = 10; int arr[10]; arr[0] = a + b; if((a < b) && (b < 20)){ a++; } do{ a = a - 1; } while(a > 0); return 0; }", True),
     ]
 
     error_cases = [
@@ -157,11 +170,14 @@ def main():
         ("return 0", ("Expected ';'", "<eof>", 3)),
         ("foo(1,);", ("Expected operand", ")", 5)),
         ("int add(int a float b){ return a+b; }", ("Missing ')'", "float", 6)),
-        ("int add(int a,){ return a; }", ("Expected parameter type", ")", 6)),
+        ("int add(int a,){ return a; }", ("Expected parameter type", ")", 7)),
         ("int add(, int b){ return b; }", ("Expected parameter type", ",", 4)),
-        ("int main(){ int x; x=add((1+2); return x; }", ("Missing ')'", ";", 12)),
-        ("int main(){ for(i=0; i<10 i++){ i++; } }", ("Expected ';' after for condition", "i", 10)),
+        ("int main(){ int x; x=add((1+2); return x; }", ("Missing ')' in function call", ";", 18)),
+        ("int main(){ for(i=0; i<10 i++){ i++; } }", ("Expected ';' after for condition", "i", 15)),
         ("int main(){ return add(1 2); }", ("Missing ')' in function call", "2", 10)),
+        ("int main(){ int arr[foo]; }", ("Array size must be an integer literal", "foo", 9)),
+        ("int main(){ int arr[10; }", ("Missing ']'", ";", 10)),
+        ("int main(){ do{ a++; }(a<10); }", ("Expected 'while'", "(", 12)),
     ]
 
     semantic_error_cases = [
@@ -171,11 +187,14 @@ def main():
         ("int a; int a;", ("Variable 'a' already declared", "a", 5)),
         ("int main(){ int a; if(a>b){ a=a+1; } }", ("Variable 'b' not declared", "b", 13)),
         ("int a; if((a+1)>(b*2)){ a=a+1; }", ("Variable 'b' not declared", "b", 13)),
+        ("int main(){ int i; i=arr[0]; }", ("Variable 'arr' not declared", "arr", 11)),
+        ("int main(){ int a; a[0]=1; }", ("Variable 'a' is not an array", "a", 9)),
     ]
 
     type_error_cases = [
         ("int a; float b; a=b+1;", ("Type mismatch: cannot assign float to int", ";", 12)),
         ("int main(){ int a; float b; a=b+1; }", ("Type mismatch: cannot assign float to int", ";", 17)),
+        ("int main(){ int a=1.5; }", ("Type mismatch: cannot assign float to int", ";", 10)),
     ]
 
     stress_error_cases = [
@@ -275,7 +294,7 @@ def main():
     passed = 0
     total = 0
 
-    for ok in [tokenizer_ok, comment_ok, expr_tokenizer_ok, float_tokenizer_ok, identifier_tokenizer_ok, main_tokenizer_ok, call_tokenizer_ok]:
+    for ok in [tokenizer_ok, comment_ok, expr_tokenizer_ok, float_tokenizer_ok, identifier_tokenizer_ok, main_tokenizer_ok, call_tokenizer_ok, array_logic_tokenizer_ok]:
         total += 1
         if ok:
             passed += 1
