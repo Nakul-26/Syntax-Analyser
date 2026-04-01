@@ -1,78 +1,96 @@
 General C-like Syntax Grammar
 =============================
 
-Supported program forms:
-- program -> statement_list
-- program -> int main ( ) block
-- statement_list -> statement statement_list | epsilon
+Program structure
+- program -> external_list
+- external_list -> external external_list | epsilon
+- external -> function_decl | function_def | statement
 
-Supported statements:
-- declaration
-- assignment
-- increment
-- if_stmt
-- while_stmt
-- do_while_stmt
-- for_stmt
-- return_stmt
-- break_stmt
-- continue_stmt
-- function_call
-- block
+Functions
+- function_decl -> type function_name ( parameter_list ) ;
+- function_def -> type function_name ( parameter_list ) block
+- function_name -> identifier | main
+- parameter_list -> parameter (, parameter)* | epsilon
+- parameter -> type identifier
 
-Supported declaration:
-- type decl_list ;
+Statements
+- statement -> declaration
+- statement -> assignment
+- statement -> increment
+- statement -> if_stmt
+- statement -> while_stmt
+- statement -> do_while_stmt
+- statement -> for_stmt
+- statement -> return_stmt
+- statement -> break_stmt
+- statement -> continue_stmt
+- statement -> function_call_stmt
+- statement -> block
+
+Declarations
+- declaration -> type decl_list ;
 - type -> int | float | char
 - decl_list -> decl_item (, decl_item)*
-- decl_item -> variable | variable = expr | variable [ number ]
+- decl_item -> identifier
+- decl_item -> identifier = expr
+- decl_item -> identifier [ number ]
 
-Supported assignment:
-- variable = expr ;
-- variable [ expr ] = expr ;
+Assignments and updates
+- assignment -> lvalue = expr ;
+- assignment_core -> lvalue = expr
+- lvalue -> identifier
+- lvalue -> identifier [ expr ]
+- increment -> identifier ++ ;
+- increment_core -> identifier ++
 
-Supported increment:
-- variable ++ ;
+Blocks
+- block -> { statement_list }
+- statement_list -> statement statement_list | epsilon
 
-Supported block:
-- { statement_list }
-
-Supported if:
-- if ( condition ) statement else_part
+Selection and iteration
+- if_stmt -> if ( condition ) statement else_part
 - else_part -> else statement | epsilon
+- while_stmt -> while ( condition ) statement
+- do_while_stmt -> do statement while ( condition ) ;
+- for_stmt -> for ( for_init? ; condition? ; for_update? ) statement
+- for_init -> declaration_core | assignment_core
+- for_update -> increment_core | assignment_core
 
-Supported while:
-- while ( condition ) statement
-
-Supported do-while:
-- do statement while ( condition ) ;
-
-Supported for:
-- for ( assignment_core? ; condition? ; (increment_core | assignment_core)? ) statement
-
-Supported condition:
-- logical_or
-- logical_or -> logical_and (|| logical_and)*
-- logical_and -> relation (&& relation)*
-- relation -> expr relop expr | ( condition )
+Conditions
+- condition -> logical_or
+- logical_or -> logical_and ( || logical_and )*
+- logical_and -> relation ( && relation )*
+- relation -> expr relop expr
+- relation -> ( condition )
 - relop -> > | < | >= | <= | == | !=
 
-Supported expression:
-- expr -> term ((+ | -) term)*
-- term -> factor ((* | /) factor)*
-- factor -> variable | variable [ expr ] | function_call | number | ( expr )
+Expressions
+- expr -> term (( + | - ) term)*
+- term -> factor (( * | / ) factor)*
+- factor -> identifier
+- factor -> identifier [ expr ]
+- factor -> function_call_expr
+- factor -> number
+- factor -> ( expr )
 
-Supported functions:
-- function_def -> type function_name ( parameter_list ) block
-- parameter_list -> (type variable (, type variable)*)?
-- function_call -> function_name ( argument_list )
-- argument_list -> (expr (, expr)*)?
+Function calls
+- function_call_stmt -> function_call_expr ;
+- function_call_expr -> function_name ( argument_list )
+- argument_list -> expr (, expr)* | epsilon
 
-Identifier notes:
-- identifiers may start with a letter or underscore
-- identifiers may contain letters, digits, and underscores
-- reserved keywords are not treated as identifiers
+Lexical notes
+- identifier starts with a letter or underscore
+- identifier may contain letters, digits, and underscores
+- keywords are not accepted as identifiers
+- number may be an integer literal or a floating-point literal
 
-AST notes:
+Context-aware validation
+- break is valid only inside while, do-while, and for loops
+- continue is valid only inside while, do-while, and for loops
+- array access requires the target identifier to be declared as an array
+- array indices must be integer expressions
+
+AST notes
 - declarations store type and identifier as child nodes
 - declaration groups are used for comma-separated declarations
 - assignments store target and expression as child nodes

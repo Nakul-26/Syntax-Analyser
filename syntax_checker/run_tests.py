@@ -157,15 +157,17 @@ def main():
         ("int main(){ int a=5, b=10; if((a<b)&&(b<20)){ a++; } return a; }", True),
         ("int main(){ int a=3; do{ a=a-1; }while(a>0); return a; }", True),
         ("int main(){ int a = 5, b = 10; int arr[10]; arr[0] = a + b; if((a < b) && (b < 20)){ a++; } do{ a = a - 1; } while(a > 0); return 0; }", True),
+        ("int add(int a, int b); int add(int a, int b){ return a+b; } int main(){ return add(1,2); }", True),
+        ("int main(){ for(int i=0; i<10; i++){ print(i); } return 0; }", True),
     ]
 
     error_cases = [
-        ("if(a>b { a=a+1; }", ("Missing ')'", "{", 6)),
+        ("if(a>b { a=a+1; }", ("Expected ')' after if condition", "{", 6)),
         ("while(b<10){ b++ }", ("Expected ';'", "}", 10)),
         ("if(>b){ a=a+1; }", ("Expected operand", ">", 3)),
         ("if(a>b) a=a+;", ("Expected operand", ";", 11)),
         ("int main(){ int a; int b; if(a>b){ a=a+1; }", ("Missing '}'", "<eof>", 26)),
-        ("int a; if((a+1)>b{ a=a+1; }", ("Missing ')'", "{", 13)),
+        ("int a; if((a+1)>b{ a=a+1; }", ("Expected ')' after if condition", "{", 13)),
         ("for(i=0 i<10; i++){ i=i+1; }", ("Expected ';' after for initializer", "i", 6)),
         ("return 0", ("Expected ';'", "<eof>", 3)),
         ("foo(1,);", ("Expected operand", ")", 5)),
@@ -178,6 +180,7 @@ def main():
         ("int main(){ int arr[foo]; }", ("Array size must be an integer literal", "foo", 9)),
         ("int main(){ int arr[10; }", ("Missing ']'", ";", 10)),
         ("int main(){ do{ a++; }(a<10); }", ("Expected 'while'", "(", 12)),
+        ("int main(){ while(a<10 { a++; } }", ("Expected ')' after while condition", "{", 11)),
     ]
 
     semantic_error_cases = [
@@ -198,14 +201,14 @@ def main():
     ]
 
     stress_error_cases = [
-        ("int main(){ break; }", ("break outside loop accepted by current grammar", True)),
-        ("int main(){ continue; }", ("continue outside loop accepted by current grammar", True)),
+        ("int main(){ break; }", ("'break' is only allowed inside a loop", "break", 6)),
+        ("int main(){ continue; }", ("'continue' is only allowed inside a loop", "continue", 6)),
     ]
 
     recovery_source = "int a\na = ;\nif(a>b {\n    a = a + ;\n}\n"
     recovery_expected = [
         ("Expected ';'", "a", 2),
-        ("Missing ')'", "{", 3),
+        ("Expected ')' after if condition", "{", 3),
         ("Expected operand", ";", 4),
         ("Unexpected token", "}", 5),
     ]
@@ -289,6 +292,15 @@ def main():
         "a = t2",
         "t3 = a + 1",
         "a = t3",
+    ]
+
+    init_tac_source = "int main(){ int a=5, b=10; int c; c=a+b; return c; }"
+    init_tac_expected = [
+        "a = 5",
+        "b = 10",
+        "t1 = a + b",
+        "c = t1",
+        "return c",
     ]
 
     passed = 0
@@ -377,6 +389,16 @@ def main():
         passed += 1
 
     total += 1
+    _, init_tac_errors, init_tac_context = run_program_artifacts(init_tac_source)
+    actual_init_tac = init_tac_context.get("intermediate_code") if not init_tac_errors else None
+    init_tac_ok = actual_init_tac == init_tac_expected
+    print(f"[{'PASS' if init_tac_ok else 'FAIL'}] INIT TAC {init_tac_source!r}")
+    print(f"       expected = {init_tac_expected}")
+    print(f"       actual   = {actual_init_tac}")
+    if init_tac_ok:
+        passed += 1
+
+    total += 1
     recovery_tree, recovery_errors, _ = run_program_with_lines(recovery_source, None)
     actual_recovery = [
         (item.get("message"), item.get("token"), item.get("line"))
@@ -419,12 +441,17 @@ def main():
         total += 1
         errors = {}
         context = {"symbol_table": {}}
-        actual = parse_program(tokenize(source), errors, context) is not None
-        status = "PASS" if actual == expected[1] else "FAIL"
+        parse_program(tokenize(source), errors, context)
+        actual = (
+            errors.get("message"),
+            errors.get("token"),
+            errors.get("index", -1) + 1,
+        )
+        status = "PASS" if actual == expected else "FAIL"
         print(f"[{status}] STRESS {source!r}")
-        print(f"       note     = {expected[0]}")
-        print(f"       accepted = {actual}")
-        if actual == expected[1]:
+        print(f"       expected = {expected}")
+        print(f"       actual   = {actual}")
+        if actual == expected:
             passed += 1
 
     print(f"\nSummary: {passed}/{total} tests passed")

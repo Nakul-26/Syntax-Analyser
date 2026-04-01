@@ -79,6 +79,7 @@ def initialize_context(context):
     context.setdefault("scopes", [context["symbol_table"]])
     context.setdefault("intermediate_code", [])
     context.setdefault("temp_count", 1)
+    context.setdefault("loop_depth", 0)
     return context
 
 
@@ -123,6 +124,28 @@ def pop_scope(context):
     initialize_context(context)
     if len(context["scopes"]) > 1:
         context["scopes"].pop()
+
+
+def enter_loop(context):
+    if context is None:
+        return
+    initialize_context(context)
+    context["loop_depth"] += 1
+
+
+def exit_loop(context):
+    if context is None:
+        return
+    initialize_context(context)
+    if context["loop_depth"] > 0:
+        context["loop_depth"] -= 1
+
+
+def is_inside_loop(context):
+    if context is None:
+        return False
+    initialize_context(context)
+    return context["loop_depth"] > 0
 
 
 def lookup_variable_type(context, name):
@@ -250,6 +273,9 @@ def generate_statement_code(node, context):
     if node.type == "FUNCTION":
         return generate_statement_code(node.children[-1], context)
 
+    if node.type == "FUNCTION_PROTO":
+        return []
+
     if node.type in ["MAIN", "BLOCK", "ELSE", "DECL_GROUP"]:
         code = []
         for child in node.children:
@@ -257,6 +283,10 @@ def generate_statement_code(node, context):
         return code
 
     if node.type == "DECL":
+        if len(node.children) >= 3 and node.children[-1].type == "INIT":
+            expr_code, result_name = generate_expr_code(node.children[-1].children[0], context)
+            target = node.children[1].value
+            return expr_code + [f"{target} = {result_name}"]
         return []
 
     if node.type == "ASSIGN":
@@ -755,6 +785,9 @@ def parse_break(tokens, i, errors=None, context=None):
     if i >= len(tokens) or tokens[i] != "break":
         set_error(errors, i, "Expected 'break'", tokens)
         return -1, None
+    if semantic_enabled(context) and not is_inside_loop(context):
+        set_error(errors, i, "'break' is only allowed inside a loop", tokens)
+        return -1, None
     i += 1
 
     if i >= len(tokens) or tokens[i] != ";":
@@ -769,6 +802,9 @@ def parse_continue(tokens, i, errors=None, context=None):
 
     if i >= len(tokens) or tokens[i] != "continue":
         set_error(errors, i, "Expected 'continue'", tokens)
+        return -1, None
+    if semantic_enabled(context) and not is_inside_loop(context):
+        set_error(errors, i, "'continue' is only allowed inside a loop", tokens)
         return -1, None
     i += 1
 
@@ -787,9 +823,13 @@ def parse_do_while(tokens, i, errors=None, context=None):
         return -1, None
     i += 1
 
-    i, body = parse_statement(tokens, i, errors, context)
-    if i == -1:
-        return -1, None
+    enter_loop(context)
+    try:
+        i, body = parse_statement(tokens, i, errors, context)
+        if i == -1:
+            return -1, None
+    finally:
+        exit_loop(context)
 
     if i >= len(tokens) or tokens[i] != "while":
         set_error(errors, i, "Expected 'while'", tokens)
@@ -806,7 +846,7 @@ def parse_do_while(tokens, i, errors=None, context=None):
         return -1, None
 
     if i >= len(tokens) or tokens[i] != ")":
-        set_error(errors, i, "Missing ')'", tokens)
+        set_error(errors, i, "Expected ')' after do-while condition", tokens)
         return -1, None
     i += 1
 
@@ -836,7 +876,10 @@ def parse_for(tokens, i=0, errors=None, context=None):
     for_node = Node("FOR")
 
     if i < len(tokens) and tokens[i] != ";":
-        init_i, init_node = parse_assignment_core(tokens, i, errors, context)
+        if tokens[i] in DECLARATION_TYPES:
+            init_i, init_node = parse_declaration_core(tokens, i, errors, context)
+        else:
+            init_i, init_node = parse_assignment_core(tokens, i, errors, context)
         if init_i == -1:
             return -1, None
         for_node.add(init_node)
@@ -873,9 +916,13 @@ def parse_for(tokens, i=0, errors=None, context=None):
         return -1, None
     i += 1
 
-    i, body = parse_statement(tokens, i, errors, context)
-    if i == -1:
-        return -1, None
+    enter_loop(context)
+    try:
+        i, body = parse_statement(tokens, i, errors, context)
+        if i == -1:
+            return -1, None
+    finally:
+        exit_loop(context)
     for_node.add(body)
     return i, for_node
 
@@ -932,7 +979,7 @@ def parse_if(tokens, i=0, errors=None, context=None):
         return -1, None
 
     if i >= len(tokens) or tokens[i] != ")":
-        set_error(errors, i, "Missing ')'", tokens)
+        set_error(errors, i, "Expected ')' after if condition", tokens)
         return -1, None
     i += 1
 
@@ -990,7 +1037,7 @@ def parse_while(tokens, i=0, errors=None, context=None):
         return -1, None
 
     if i >= len(tokens) or tokens[i] != ")":
-        set_error(errors, i, "Missing ')'", tokens)
+        set_error(errors, i, "Expected ')' after while condition", tokens)
         return -1, None
     i += 1
 
@@ -1001,18 +1048,22 @@ def parse_while(tokens, i=0, errors=None, context=None):
         set_error(errors, i, "Expected loop body", tokens)
         return -1, None
 
-    if tokens[i] == "{":
-        i, body = parse_block(tokens, i, errors, context)
-    else:
-        i, body = parse_statement(tokens, i, errors, context)
-    if i == -1:
-        return -1, None
+    enter_loop(context)
+    try:
+        if tokens[i] == "{":
+            i, body = parse_block(tokens, i, errors, context)
+        else:
+            i, body = parse_statement(tokens, i, errors, context)
+        if i == -1:
+            return -1, None
+    finally:
+        exit_loop(context)
 
     while_node.add(body)
     return i, while_node
 
 
-def parse_declaration(tokens, i, errors=None, context=None):
+def parse_declaration_core(tokens, i, errors=None, context=None):
     initialize_context(context)
 
     if i >= len(tokens) or tokens[i] not in DECLARATION_TYPES:
@@ -1084,17 +1135,26 @@ def parse_declaration(tokens, i, errors=None, context=None):
             continue
         break
 
+    return i, declarations[0] if len(declarations) == 1 else make_declaration_group(declarations)
+
+
+def make_declaration_group(declarations):
+    group = Node("DECL_GROUP")
+    for declaration in declarations:
+        group.add(declaration)
+    return group
+
+
+def parse_declaration(tokens, i, errors=None, context=None):
+    i, declaration = parse_declaration_core(tokens, i, errors, context)
+    if i == -1:
+        return -1, None
+
     if i >= len(tokens) or tokens[i] != ";":
         set_error(errors, i, "Expected ';'", tokens)
         return -1, None
 
-    if len(declarations) == 1:
-        return i + 1, declarations[0]
-
-    group = Node("DECL_GROUP")
-    for declaration in declarations:
-        group.add(declaration)
-    return i + 1, group
+    return i + 1, declaration
 
 
 def parse_statement(tokens, i, errors=None, context=None):
@@ -1234,6 +1294,14 @@ def parse_function_definition(tokens, i, errors=None, context=None):
         return -1, None
     i += 1
 
+    if i < len(tokens) and tokens[i] == ";":
+        prototype_node = Node("FUNCTION_PROTO", function_name)
+        prototype_node.add(make_type(return_type))
+        for param in params:
+            prototype_node.add(param)
+        pop_scope(context)
+        return i + 1, prototype_node
+
     i, block = parse_block(tokens, i, errors, context)
     if i == -1:
         pop_scope(context)
@@ -1255,6 +1323,9 @@ def parse_main(tokens, i, errors=None, context=None):
 
     if function_node.value != "main":
         set_error(errors, i, "Expected 'main'", tokens)
+        return -1, None
+    if function_node.type != "FUNCTION":
+        set_error(errors, i, "'main' must be defined with a function body", tokens)
         return -1, None
 
     main_node = Node("MAIN")
