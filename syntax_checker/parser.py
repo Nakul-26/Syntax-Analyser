@@ -1,3 +1,6 @@
+import re
+
+
 class Node:
     def __init__(self, type, value=None):
         self.type = type
@@ -21,14 +24,21 @@ class Node:
 DECLARATION_TYPES = {"int", "float", "char"}
 KEYWORDS = {"if", "else", "while", "for", "do", "return", "break", "continue", "int", "float", "char", "main"}
 SYNC_TOKENS = {";", "{", "}", ")"}
+DEBUG = False
+IDENTIFIER_PATTERN = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
+
+
+def debug_log(*parts):
+    if DEBUG:
+        print(*parts)
+
+
+def is_identifier(token):
+    return bool(token) and token not in KEYWORDS and IDENTIFIER_PATTERN.match(token) is not None
 
 
 def is_variable(token):
-    if not token or token in KEYWORDS:
-        return False
-    if not (token[0].isalpha() or token[0] == "_"):
-        return False
-    return all(char.isalnum() or char == "_" for char in token)
+    return is_identifier(token)
 
 
 def is_int(token):
@@ -65,6 +75,10 @@ def make_type(value):
 
 def make_array_size(value):
     return Node("SIZE", value)
+
+
+def make_empty_statement():
+    return Node("EMPTY")
 
 
 def semantic_enabled(context):
@@ -282,6 +296,9 @@ def generate_statement_code(node, context):
             code.extend(generate_statement_code(child, context))
         return code
 
+    if node.type == "EMPTY":
+        return []
+
     if node.type == "DECL":
         if len(node.children) >= 3 and node.children[-1].type == "INIT":
             expr_code, result_name = generate_expr_code(node.children[-1].children[0], context)
@@ -360,6 +377,16 @@ def set_error(errors, index, message, tokens=None):
         errors["token"] = token
         errors["line"] = line
         errors["message"] = message
+
+
+def format_error(item):
+    line = item.get("line")
+    message = item.get("message", "Invalid program")
+    token = item.get("token", "<eof>")
+    prefix = f"Line {line}" if line is not None else f"Token {item.get('index', 0) + 1}"
+    if token == "<eof>":
+        return f"{prefix}: {message}"
+    return f"{prefix}: {message} near '{token}'"
 
 
 def has_recorded_errors(errors):
@@ -1159,10 +1186,14 @@ def parse_declaration(tokens, i, errors=None, context=None):
 
 def parse_statement(tokens, i, errors=None, context=None):
     initialize_context(context)
+    debug_log("Parsing statement at token", i, tokens[i] if i < len(tokens) else "<eof>")
 
     if i >= len(tokens):
         set_error(errors, i, "Unexpected end of input", tokens)
         return -1, None
+
+    if tokens[i] == ";":
+        return i + 1, make_empty_statement()
 
     if tokens[i] in DECLARATION_TYPES:
         return parse_declaration(tokens, i, errors, context)

@@ -1,4 +1,4 @@
-from parser import parse, parse_if, parse_program, parse_while
+from parser import format_error, parse, parse_if, parse_program, parse_while
 from tokenizer import tokenize, tokenize_with_lines
 
 
@@ -131,6 +131,8 @@ def main():
     ]
 
     parse_cases = [
+        (";", True),
+        ("int a;;", True),
         ("int a; int b; if(a>b){ a=a+1; while(b<10){ b++; } }", True),
         ("int a; int b; int x; if(a>b){ while(b<10){ if(x!=9){ x=x+1; } } }", True),
         ("if(a>b){ a=a+1; ", False),
@@ -159,9 +161,15 @@ def main():
         ("int main(){ int a = 5, b = 10; int arr[10]; arr[0] = a + b; if((a < b) && (b < 20)){ a++; } do{ a = a - 1; } while(a > 0); return 0; }", True),
         ("int add(int a, int b); int add(int a, int b){ return a+b; } int main(){ return add(1,2); }", True),
         ("int main(){ for(int i=0; i<10; i++){ print(i); } return 0; }", True),
+        ("int main(){ int _var1 = 3; float count2 = 3.14; ; return _var1; }", True),
+        ("int main(){ int a; int b; if(a>b) a++; else b++; return 0; }", True),
+        ("int main(){ int a; int b; int c; if(a>0){ if(b>0){ if(c>0){ a++; } } } return 0; }", True),
+        ("int   a   =   5 ;", True),
     ]
 
     error_cases = [
+        ("if a>b", ("Missing '(' after if", "a", 2)),
+        ("while a>b", ("Missing '(' after while", "a", 2)),
         ("if(a>b { a=a+1; }", ("Expected ')' after if condition", "{", 6)),
         ("while(b<10){ b++ }", ("Expected ';'", "}", 10)),
         ("if(>b){ a=a+1; }", ("Expected operand", ">", 3)),
@@ -435,6 +443,16 @@ def main():
     print(f"       expected = {block_recovery_expected}")
     print(f"       actual   = {actual_block_recovery}")
     if block_recovery_ok:
+        passed += 1
+
+    total += 1
+    format_item = {"line": 5, "token": ";", "message": "Expected expression", "index": 11}
+    formatted_error = format_error(format_item)
+    format_ok = formatted_error == "Line 5: Expected expression near ';'"
+    print(f"[{'PASS' if format_ok else 'FAIL'}] ERROR FORMAT")
+    print("       expected = Line 5: Expected expression near ';'")
+    print(f"       actual   = {formatted_error}")
+    if format_ok:
         passed += 1
 
     for source, expected in stress_error_cases:

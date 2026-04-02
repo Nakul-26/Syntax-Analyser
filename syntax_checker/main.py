@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from parser import parse_program
+from parser import format_error, parse_program
 from tokenizer import tokenize_with_lines
 
 
@@ -17,9 +17,7 @@ def main():
 
     if tree is None:
         for item in errors.get("items", []):
-            line = item.get("line")
-            location = f"line {line}" if line is not None else f"token {item.get('index', 0) + 1}"
-            print(f"Error at {location} near '{item.get('token', '<eof>')}': {item.get('message', 'Invalid program')}")
+            print(format_error(item))
         print("Parsing completed with recovery")
         return
 
