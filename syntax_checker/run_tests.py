@@ -111,6 +111,14 @@ def main():
     print(f"       expected = {array_logic_tokenizer_expected}")
     print(f"       actual   = {array_logic_tokenizer_actual}")
 
+    switch_tokenizer_expected = ["switch", "(", "a", ")", "{", "case", "1", ":", "break", ";", "default", ":", "a", "=", "0", ";", "}"]
+    switch_tokenizer_actual = tokenize("switch(a){ case 1: break; default: a=0; }")
+    switch_tokenizer_ok = switch_tokenizer_actual == switch_tokenizer_expected
+
+    print("[PASS]" if switch_tokenizer_ok else "[FAIL]", "TOKENIZER supports switch labels")
+    print(f"       expected = {switch_tokenizer_expected}")
+    print(f"       actual   = {switch_tokenizer_actual}")
+
     cases = [
         ("if", "if(a>b) a=a+1;", True),
         ("if", "if(a>5) a=a+1;", True),
@@ -165,6 +173,7 @@ def main():
         ("int main(){ int a; int b; if(a>b) a++; else b++; return 0; }", True),
         ("int main(){ int a; int b; int c; if(a>0){ if(b>0){ if(c>0){ a++; } } } return 0; }", True),
         ("int   a   =   5 ;", True),
+        ("int main(){ int a; switch(a){ case 1: a++; break; default: a=0; } return a; }", True),
     ]
 
     error_cases = [
@@ -189,6 +198,7 @@ def main():
         ("int main(){ int arr[10; }", ("Missing ']'", ";", 10)),
         ("int main(){ do{ a++; }(a<10); }", ("Expected 'while'", "(", 12)),
         ("int main(){ while(a<10 { a++; } }", ("Expected ')' after while condition", "{", 11)),
+        ("int main(){ int a; switch(a){ case: a=5; } }", ("Expected number after case", ":", 15)),
     ]
 
     semantic_error_cases = [
@@ -209,7 +219,7 @@ def main():
     ]
 
     stress_error_cases = [
-        ("int main(){ break; }", ("'break' is only allowed inside a loop", "break", 6)),
+        ("int main(){ break; }", ("'break' is only allowed inside a loop or switch", "break", 6)),
         ("int main(){ continue; }", ("'continue' is only allowed inside a loop", "continue", 6)),
     ]
 

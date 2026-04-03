@@ -22,7 +22,23 @@ class Node:
 
 
 DECLARATION_TYPES = {"int", "float", "char"}
-KEYWORDS = {"if", "else", "while", "for", "do", "return", "break", "continue", "int", "float", "char", "main"}
+KEYWORDS = {
+    "if",
+    "else",
+    "while",
+    "for",
+    "do",
+    "switch",
+    "case",
+    "default",
+    "return",
+    "break",
+    "continue",
+    "int",
+    "float",
+    "char",
+    "main",
+}
 SYNC_TOKENS = {";", "{", "}", ")"}
 DEBUG = False
 IDENTIFIER_PATTERN = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
@@ -94,6 +110,7 @@ def initialize_context(context):
     context.setdefault("intermediate_code", [])
     context.setdefault("temp_count", 1)
     context.setdefault("loop_depth", 0)
+    context.setdefault("switch_depth", 0)
     return context
 
 
@@ -160,6 +177,32 @@ def is_inside_loop(context):
         return False
     initialize_context(context)
     return context["loop_depth"] > 0
+
+
+def enter_switch(context):
+    if context is None:
+        return
+    initialize_context(context)
+    context["switch_depth"] += 1
+
+
+def exit_switch(context):
+    if context is None:
+        return
+    initialize_context(context)
+    if context["switch_depth"] > 0:
+        context["switch_depth"] -= 1
+
+
+def is_inside_switch(context):
+    if context is None:
+        return False
+    initialize_context(context)
+    return context["switch_depth"] > 0
+
+
+def is_inside_breakable(context):
+    return is_inside_loop(context) or is_inside_switch(context)
 
 
 def lookup_variable_type(context, name):
@@ -348,6 +391,13 @@ def generate_statement_code(node, context):
     if node.type == "FOR":
         code = []
         for child in node.children:
+            code.extend(generate_statement_code(child, context))
+        return code
+
+    if node.type in ["SWITCH", "CASE", "DEFAULT"]:
+        code = []
+        start_index = 1 if node.type == "SWITCH" else 0
+        for child in node.children[start_index:]:
             code.extend(generate_statement_code(child, context))
         return code
 
@@ -812,8 +862,8 @@ def parse_break(tokens, i, errors=None, context=None):
     if i >= len(tokens) or tokens[i] != "break":
         set_error(errors, i, "Expected 'break'", tokens)
         return -1, None
-    if semantic_enabled(context) and not is_inside_loop(context):
-        set_error(errors, i, "'break' is only allowed inside a loop", tokens)
+    if semantic_enabled(context) and not is_inside_breakable(context):
+        set_error(errors, i, "'break' is only allowed inside a loop or switch", tokens)
         return -1, None
     i += 1
 
@@ -885,6 +935,140 @@ def parse_do_while(tokens, i, errors=None, context=None):
     node.add(body)
     node.add(condition)
     return i + 1, node
+
+
+def parse_statement_list(tokens, i, errors=None, context=None, stop_tokens=None):
+    initialize_context(context)
+    stop_tokens = {"}"} if stop_tokens is None else set(stop_tokens)
+
+    statements = []
+    while i < len(tokens) and tokens[i] not in stop_tokens:
+        next_i, statement = parse_statement(tokens, i, errors, context)
+        if next_i == -1:
+            recovery_index = recover_statement(tokens, errors, i, stop_tokens)
+            if recovery_index >= len(tokens):
+                return len(tokens), statements
+            if tokens[recovery_index] == ";":
+                i = recovery_index + 1
+                continue
+            if tokens[recovery_index] in stop_tokens:
+                return recovery_index, statements
+            i = max(recovery_index, i + 1)
+            continue
+        i = next_i
+        statements.append(statement)
+
+    return i, statements
+
+
+def parse_case_list(tokens, i, errors=None, context=None):
+    initialize_context(context)
+
+    cases = []
+    seen_default = False
+
+    while i < len(tokens) and tokens[i] != "}":
+        if tokens[i] == "case":
+            if seen_default:
+                set_error(errors, i, "No case labels allowed after default", tokens)
+                return -1, None
+
+            case_node = Node("CASE")
+            i += 1
+
+            if i >= len(tokens) or not is_int(tokens[i]):
+                set_error(errors, i, "Expected number after case", tokens)
+                return -1, None
+            case_node.add(make_number(tokens[i]))
+            i += 1
+
+            if i >= len(tokens) or tokens[i] != ":":
+                set_error(errors, i, "Expected ':' after case value", tokens)
+                return -1, None
+            i += 1
+
+            i, statements = parse_statement_list(tokens, i, errors, context, {"case", "default", "}"})
+            if i == -1:
+                return -1, None
+            for statement in statements:
+                case_node.add(statement)
+            cases.append(case_node)
+            continue
+
+        if tokens[i] == "default":
+            if seen_default:
+                set_error(errors, i, "Duplicate default label", tokens)
+                return -1, None
+
+            default_node = Node("DEFAULT")
+            seen_default = True
+            i += 1
+
+            if i >= len(tokens) or tokens[i] != ":":
+                set_error(errors, i, "Expected ':' after default", tokens)
+                return -1, None
+            i += 1
+
+            i, statements = parse_statement_list(tokens, i, errors, context, {"case", "default", "}"})
+            if i == -1:
+                return -1, None
+            for statement in statements:
+                default_node.add(statement)
+            cases.append(default_node)
+            continue
+
+        set_error(errors, i, "Expected 'case', 'default', or '}'", tokens)
+        return -1, None
+
+    return i, cases
+
+
+def parse_switch(tokens, i, errors=None, context=None):
+    initialize_context(context)
+
+    if i >= len(tokens) or tokens[i] != "switch":
+        set_error(errors, i, "Expected 'switch'", tokens)
+        return -1, None
+    i += 1
+
+    if i >= len(tokens) or tokens[i] != "(":
+        set_error(errors, i, "Missing '(' after switch", tokens)
+        return -1, None
+    i += 1
+
+    i, expr = parse_expr(tokens, i, errors, context)
+    if i == -1:
+        return -1, None
+
+    if i >= len(tokens) or tokens[i] != ")":
+        set_error(errors, i, "Expected ')' after switch expression", tokens)
+        return -1, None
+    i += 1
+
+    if i >= len(tokens) or tokens[i] != "{":
+        set_error(errors, i, "Missing '{' after switch", tokens)
+        return -1, None
+    i += 1
+
+    switch_node = Node("SWITCH")
+    switch_node.add(expr)
+
+    enter_switch(context)
+    try:
+        i, cases = parse_case_list(tokens, i, errors, context)
+        if i == -1:
+            return -1, None
+    finally:
+        exit_switch(context)
+
+    for case in cases:
+        switch_node.add(case)
+
+    if i >= len(tokens) or tokens[i] != "}":
+        set_error(errors, i, "Missing '}' after switch", tokens)
+        return -1, None
+
+    return i + 1, switch_node
 
 
 def parse_for(tokens, i=0, errors=None, context=None):
@@ -1209,6 +1393,9 @@ def parse_statement(tokens, i, errors=None, context=None):
 
     if tokens[i] == "do":
         return parse_do_while(tokens, i, errors, context)
+
+    if tokens[i] == "switch":
+        return parse_switch(tokens, i, errors, context)
 
     if tokens[i] == "return":
         return parse_return(tokens, i, errors, context)
