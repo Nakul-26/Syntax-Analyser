@@ -60,6 +60,22 @@ def main():
     print(f"       expected = {comment_expected}")
     print(f"       actual   = {comment_actual}")
 
+    block_comment_expected = ["int", "b", "=", "10", ";"]
+    block_comment_actual = tokenize("/* comment */ int b = 10;")
+    block_comment_ok = block_comment_actual == block_comment_expected
+
+    print("[PASS]" if block_comment_ok else "[FAIL]", "TOKENIZER strips block comments")
+    print(f"       expected = {block_comment_expected}")
+    print(f"       actual   = {block_comment_actual}")
+
+    inline_block_expected = ["int", "a", "=", "5", "+", "3", ";"]
+    inline_block_actual = tokenize("int a = 5 /* comment */ + 3;")
+    inline_block_ok = inline_block_actual == inline_block_expected
+
+    print("[PASS]" if inline_block_ok else "[FAIL]", "TOKENIZER keeps tokens around inline block comments")
+    print(f"       expected = {inline_block_expected}")
+    print(f"       actual   = {inline_block_actual}")
+
     expr_tokenizer_expected = ["a", "=", "a", "+", "b", "*", "5", "-", "c", ";"]
     expr_tokenizer_actual = tokenize("a=a+b*5-c;")
     expr_tokenizer_ok = expr_tokenizer_actual == expr_tokenizer_expected
@@ -324,7 +340,7 @@ def main():
     passed = 0
     total = 0
 
-    for ok in [tokenizer_ok, comment_ok, expr_tokenizer_ok, float_tokenizer_ok, identifier_tokenizer_ok, main_tokenizer_ok, call_tokenizer_ok, array_logic_tokenizer_ok]:
+    for ok in [tokenizer_ok, comment_ok, block_comment_ok, inline_block_ok, expr_tokenizer_ok, float_tokenizer_ok, identifier_tokenizer_ok, main_tokenizer_ok, call_tokenizer_ok, array_logic_tokenizer_ok]:
         total += 1
         if ok:
             passed += 1
