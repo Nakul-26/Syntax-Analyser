@@ -188,6 +188,9 @@ def main():
         ("int main(){ int _var1 = 3; float count2 = 3.14; ; return _var1; }", True),
         ("int main(){ int a; int b; if(a>b) a++; else b++; return 0; }", True),
         ("int main(){ int a; int b; int c; if(a>0){ if(b>0){ if(c>0){ a++; } } } return 0; }", True),
+        ("int main(){ int a; int b; int c; if(a>b) if(b>c) a++; else b++; return 0; }", True),
+        ("int main(){ int a; int b; int c; if(a>b) if(b>c) a++; else b++; else c++; return 0; }", True),
+        ("int main(){ int a; int b; int c; if(a>b){ if(b>c){ a++; } } else { b++; } return 0; }", True),
         ("int   a   =   5 ;", True),
         ("int main(){ int a; switch(a){ case 1: a++; break; default: a=0; } return a; }", True),
     ]
@@ -319,6 +322,38 @@ def main():
         "              NUMBER (1)",
     ]
 
+    dangling_else_tree_source = "int main(){ int a; int b; int c; if(a>b) if(b>c) a++; else b++; return 0; }"
+    dangling_else_tree_expected = [
+        "PROGRAM",
+        "  FUNCTION (main)",
+        "    TYPE (int)",
+        "    BLOCK",
+        "      DECL (int)",
+        "        TYPE (int)",
+        "        IDENT (a)",
+        "      DECL (int)",
+        "        TYPE (int)",
+        "        IDENT (b)",
+        "      DECL (int)",
+        "        TYPE (int)",
+        "        IDENT (c)",
+        "      IF",
+        "        CONDITION (>)",
+        "          IDENT (a)",
+        "          IDENT (b)",
+        "        IF",
+        "          CONDITION (>)",
+        "            IDENT (b)",
+        "            IDENT (c)",
+        "          INCREMENT",
+        "            IDENT (a)",
+        "          ELSE",
+        "            INCREMENT",
+        "              IDENT (b)",
+        "      RETURN",
+        "        NUMBER (0)",
+    ]
+
     tac_source = "int a; int b; int c; if(a>b){ a=b+c*5; } while(a<10){ a=a+1; }"
     tac_expected = [
         "t1 = c * 5",
@@ -410,6 +445,16 @@ def main():
     print(f"       expected = {tree_expected}")
     print(f"       actual   = {actual_tree}")
     if tree_ok:
+        passed += 1
+
+    total += 1
+    dangling_else_tree = parse_program(tokenize(dangling_else_tree_source), {}, {"symbol_table": {}})
+    actual_dangling_else_tree = dangling_else_tree.to_lines() if dangling_else_tree is not None else None
+    dangling_else_tree_ok = actual_dangling_else_tree == dangling_else_tree_expected
+    print(f"[{'PASS' if dangling_else_tree_ok else 'FAIL'}] TREE {dangling_else_tree_source!r}")
+    print(f"       expected = {dangling_else_tree_expected}")
+    print(f"       actual   = {actual_dangling_else_tree}")
+    if dangling_else_tree_ok:
         passed += 1
 
     total += 1
