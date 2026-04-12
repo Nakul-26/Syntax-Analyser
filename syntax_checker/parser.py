@@ -275,7 +275,7 @@ def infer_node_type(node, context):
     if node.type == "CALL":
         return "int"
 
-    if node.type in ["+", "-", "*", "/"]:
+    if node.type in ["+", "-", "*", "/", "%"]:
         left_type = infer_node_type(node.children[0], context)
         right_type = infer_node_type(node.children[1], context)
         if left_type is None or right_type is None:
@@ -283,6 +283,23 @@ def infer_node_type(node, context):
         if node.type == "/":
             return "float" if "float" in [left_type, right_type] else "int"
         return combine_types(left_type, right_type)
+
+    if node.type in ["UNARY+", "UNARY-", "NOT"]:
+        child_type = infer_node_type(node.children[0], context)
+        if child_type is None:
+            return None
+        if node.type == "NOT":
+            return "int"
+        return child_type
+
+    if node.type in ["INCREMENT", "DECREMENT"]:
+        # child is IDENT
+        if not node.children:
+            return None
+        child = node.children[0]
+        if child.type == "IDENT":
+            return lookup_variable_type(context, child.value)
+        return None
 
     return None
 
@@ -312,6 +329,31 @@ def generate_expr_code(node, context):
         temp = new_temp(context)
         call_text = f"{node.value}({', '.join(arg_values)})"
         return arg_code + [f"{temp} = {call_text}"], temp
+
+    # unary increment/decrement used as expression
+    if node.type in ["INCREMENT", "DECREMENT"]:
+        target_node = node.children[0]
+        target = target_node.value if target_node.type == "IDENT" else None
+        if target is None:
+            return [], None
+        op_char = "+" if node.type == "INCREMENT" else "-"
+        if node.value == "postfix":
+            temp = new_temp(context)
+            return [f"{temp} = {target}", f"{target} = {target} {op_char} 1"], temp
+        # prefix
+        temp = new_temp(context)
+        return [f"{target} = {target} {op_char} 1", f"{temp} = {target}"], temp
+
+    if node.type in ["UNARY+", "UNARY-", "NOT"]:
+        child_code, child_name = generate_expr_code(node.children[0], context)
+        temp = new_temp(context)
+        if node.type == "UNARY-":
+            op = "-"
+        elif node.type == "UNARY+":
+            op = "+"
+        else:
+            op = "!"
+        return child_code + [f"{temp} = {op}{child_name}"], temp
 
     left_code, left_name = generate_expr_code(node.children[0], context)
     right_code, right_name = generate_expr_code(node.children[1], context)
@@ -352,15 +394,30 @@ def generate_statement_code(node, context):
     if node.type == "ASSIGN":
         expr_code, result_name = generate_expr_code(node.children[1], context)
         target_node = node.children[0]
+        op = node.value if node.value is not None else "="
+        # handle array targets
         if target_node.type == "ARRAY_ACCESS":
             index_code, index_name = generate_expr_code(target_node.children[0], context)
-            return index_code + expr_code + [f"{target_node.value}[{index_name}] = {result_name}"]
-        return expr_code + [f"{target_node.value} = {result_name}"]
+            if op == "=":
+                return index_code + expr_code + [f"{target_node.value}[{index_name}] = {result_name}"]
+            base_op = op[0]
+            temp = new_temp(context)
+            return index_code + expr_code + [f"{temp} = {target_node.value}[{index_name}] {base_op} {result_name}", f"{target_node.value}[{index_name}] = {temp}"]
+        # non-array targets
+        if op == "=":
+            return expr_code + [f"{target_node.value} = {result_name}"]
+        base_op = op[0]
+        return expr_code + [f"{target_node.value} = {target_node.value} {base_op} {result_name}"]
 
     if node.type == "INCREMENT":
         target = node.children[0].value
         temp = new_temp(context)
         return [f"{temp} = {target} + 1", f"{target} = {temp}"]
+
+    if node.type == "DECREMENT":
+        target = node.children[0].value
+        temp = new_temp(context)
+        return [f"{temp} = {target} - 1", f"{target} = {temp}"]
 
     if node.type == "CALL_STMT":
         call_expr = Node("CALL", node.value)
@@ -607,7 +664,36 @@ def parse_factor(tokens, i, errors=None, context=None):
     if i >= len(tokens):
         set_error(errors, i, "Expected operand", tokens)
         return -1, None
+    # unary prefix: +, -, !, ++, --
+    if tokens[i] in ["+", "-", "!"]:
+        op = tokens[i]
+        i += 1
+        i, node = parse_factor(tokens, i, errors, context)
+        if i == -1:
+            return -1, None
+        if op == "+":
+            unary = Node("UNARY+")
+        elif op == "-":
+            unary = Node("UNARY-")
+        else:
+            unary = Node("NOT")
+        unary.add(node)
+        return i, unary
 
+    if tokens[i] in ["++", "--"]:
+        op = tokens[i]
+        i += 1
+        if i >= len(tokens) or not is_variable(tokens[i]):
+            set_error(errors, i, "Expected increment target", tokens)
+            return -1, None
+        if semantic_enabled(context) and not is_declared(context, tokens[i]):
+            set_error(errors, i, f"Variable '{tokens[i]}' not declared", tokens)
+            return -1, None
+        node = Node("INCREMENT" if op == "++" else "DECREMENT", "prefix")
+        node.add(make_identifier(tokens[i]))
+        return i + 1, node
+
+    # identifier, call, or array access (may be postfix ++/--)
     if is_variable(tokens[i]):
         if i + 1 < len(tokens) and tokens[i + 1] == "(":
             return parse_call_expression(tokens, i, errors, context)
@@ -619,11 +705,27 @@ def parse_factor(tokens, i, errors=None, context=None):
         if semantic_enabled(context) and is_array_variable(context, tokens[i]):
             set_error(errors, i, f"Array '{tokens[i]}' requires an index", tokens)
             return -1, None
-        return i + 1, make_identifier(tokens[i])
 
+        ident = make_identifier(tokens[i])
+        i += 1
+        if i < len(tokens) and tokens[i] in ["++", "--"]:
+            op = tokens[i]
+            node = Node("INCREMENT" if op == "++" else "DECREMENT", "postfix")
+            node.add(ident)
+            return i + 1, node
+        return i, ident
+
+    # number literal
     if is_number(tokens[i]):
         return i + 1, make_number(tokens[i])
 
+    # string or char literal
+    if tokens[i].startswith('"') or tokens[i].startswith("'"):
+        lit_type = "STRING" if tokens[i].startswith('"') else "CHAR"
+        node = Node(lit_type, tokens[i])
+        return i + 1, node
+
+    # parenthesized expression
     if tokens[i] == "(":
         i, expr = parse_expr(tokens, i + 1, errors, context)
         if i == -1:
@@ -643,7 +745,7 @@ def parse_term(tokens, i, errors=None, context=None):
     if i == -1:
         return -1, None
 
-    while i < len(tokens) and tokens[i] in ["*", "/"]:
+    while i < len(tokens) and tokens[i] in ["*", "/", "%"]:
         op = tokens[i]
         i += 1
         i, right = parse_factor(tokens, i, errors, context)
@@ -715,9 +817,12 @@ def parse_assignment_core(tokens, i, errors=None, context=None):
         i += 1
     assignment.add(target)
 
-    if i >= len(tokens) or tokens[i] != "=":
-        set_error(errors, i, "Expected '='", tokens)
+    # accept '=' and compound assignments like '+=', '-=', '*=', '/=', '%='
+    if i >= len(tokens) or tokens[i] not in ["=", "+=", "-=", "*=", "/=", "%="]:
+        set_error(errors, i, "Expected assignment operator", tokens)
         return -1, None
+    op = tokens[i]
+    assignment.value = op
     i += 1
 
     i, expr = parse_expr(tokens, i, errors, context)
@@ -731,9 +836,16 @@ def parse_assignment_core(tokens, i, errors=None, context=None):
         if expr_type is None:
             set_error(errors, i, "Unable to infer expression type", tokens)
             return -1, None
-        if not is_assignment_compatible(target_type, expr_type):
-            set_error(errors, i, f"Type mismatch: cannot assign {expr_type} to {target_type}", tokens)
-            return -1, None
+        # for compound assignments, result type is combination of target and expr
+        if assignment.value != "=":
+            combined = combine_types(target_type, expr_type)
+            if not is_assignment_compatible(target_type, combined):
+                set_error(errors, i, f"Type mismatch: cannot assign {combined} to {target_type}", tokens)
+                return -1, None
+        else:
+            if not is_assignment_compatible(target_type, expr_type):
+                set_error(errors, i, f"Type mismatch: cannot assign {expr_type} to {target_type}", tokens)
+                return -1, None
 
     return i, assignment
 
@@ -752,24 +864,38 @@ def parse_increment(tokens, i, errors=None, context=None):
 
 def parse_increment_core(tokens, i, errors=None, context=None):
     initialize_context(context)
+    # support prefix (++i / --i)
+    if i < len(tokens) and tokens[i] in ["++", "--"]:
+        op = tokens[i]
+        i += 1
+        if i >= len(tokens) or not is_variable(tokens[i]):
+            set_error(errors, i, "Expected increment target", tokens)
+            return -1, None
+        if semantic_enabled(context) and not is_declared(context, tokens[i]):
+            set_error(errors, i, f"Variable '{tokens[i]}' not declared", tokens)
+            return -1, None
+        node = Node("INCREMENT" if op == "++" else "DECREMENT", "prefix")
+        node.add(make_identifier(tokens[i]))
+        return i + 1, node
 
+    # postfix (i++ / i--)
     if i >= len(tokens) or not is_variable(tokens[i]):
         set_error(errors, i, "Expected increment target", tokens)
         return -1, None
     if semantic_enabled(context) and not is_declared(context, tokens[i]):
         set_error(errors, i, f"Variable '{tokens[i]}' not declared", tokens)
         return -1, None
-
-    increment = Node("INCREMENT")
-    increment.add(make_identifier(tokens[i]))
+    node = Node("INCREMENT")
+    node.add(make_identifier(tokens[i]))
     i += 1
-
-    if i >= len(tokens) or tokens[i] != "++":
-        set_error(errors, i, "Expected '++'", tokens)
+    if i >= len(tokens) or tokens[i] not in ["++", "--"]:
+        set_error(errors, i, "Expected '++' or '--'", tokens)
         return -1, None
+    op = tokens[i]
+    node.type = "INCREMENT" if op == "++" else "DECREMENT"
+    node.value = "postfix"
     i += 1
-
-    return i, increment
+    return i, node
 
 
 def parse_argument_list(tokens, i, errors=None, context=None):
@@ -1412,10 +1538,13 @@ def parse_statement(tokens, i, errors=None, context=None):
     if i + 1 < len(tokens) and tokens[i + 1] == "[":
         return parse_assignment(tokens, i, errors, context)
 
-    if i + 1 < len(tokens) and tokens[i + 1] == "=":
+    if i + 1 < len(tokens) and tokens[i + 1] in ["=", "+=", "-=", "*=", "/=", "%="]:
         return parse_assignment(tokens, i, errors, context)
 
-    if i + 1 < len(tokens) and tokens[i + 1] == "++":
+    if tokens[i] in ["++", "--"]:
+        return parse_increment(tokens, i, errors, context)
+
+    if i + 1 < len(tokens) and tokens[i + 1] in ["++", "--"]:
         return parse_increment(tokens, i, errors, context)
 
     if i + 1 < len(tokens) and tokens[i + 1] == "(":
