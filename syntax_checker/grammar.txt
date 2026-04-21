@@ -36,12 +36,16 @@ Declarations
 - decl_item -> identifier [ number ]
 
 Assignments and updates
-- assignment -> lvalue = expr ;
-- assignment_core -> lvalue = expr
+- assignment -> lvalue assignment_op expr ;
+- assignment_core -> lvalue assignment_op expr
+- assignment_op -> = | += | -= | *= | /= | %=
 - lvalue -> identifier
 - lvalue -> identifier [ expr ]
-- increment -> identifier ++ ;
+- increment -> increment_core ;
 - increment_core -> identifier ++
+- increment_core -> identifier --
+- increment_core -> ++ identifier
+- increment_core -> -- identifier
 
 Blocks
 - block -> { statement_list }
@@ -61,12 +65,20 @@ Conditions
 - logical_or -> logical_and ( || logical_and )*
 - logical_and -> relation ( && relation )*
 - relation -> expr relop expr
+- relation -> ! factor
 - relation -> ( condition )
 - relop -> > | < | >= | <= | == | !=
 
 Expressions
 - expr -> term (( + | - ) term)*
 - term -> factor (( * | / ) factor)*
+- factor -> + factor
+- factor -> - factor
+- factor -> ! factor
+- factor -> ++ identifier
+- factor -> -- identifier
+- factor -> identifier ++
+- factor -> identifier --
 - factor -> identifier
 - factor -> identifier [ expr ]
 - factor -> function_call_expr

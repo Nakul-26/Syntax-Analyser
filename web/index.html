@@ -1,0 +1,450 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Syntax Analyzer</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #111318;
+      --panel: #191d24;
+      --panel-2: #202631;
+      --text: #f4f7fb;
+      --muted: #9da9ba;
+      --line: #303847;
+      --good: #42d392;
+      --bad: #ff6b6b;
+      --accent: #4ea1ff;
+      --warn: #f7c948;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    header {
+      border-bottom: 1px solid var(--line);
+      padding: 18px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    h1 {
+      font-size: 22px;
+      line-height: 1.2;
+      margin: 0;
+      font-weight: 720;
+    }
+
+    .status-pill {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--muted);
+      padding: 8px 12px;
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: minmax(0, 1.04fr) minmax(360px, 0.96fr);
+      min-height: calc(100vh - 73px);
+    }
+
+    .editor-pane,
+    .result-pane {
+      min-width: 0;
+      padding: 20px;
+    }
+
+    .editor-pane {
+      border-right: 1px solid var(--line);
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .toolbar-title {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 650;
+      text-transform: uppercase;
+    }
+
+    button {
+      border: 0;
+      border-radius: 6px;
+      background: var(--accent);
+      color: #07111f;
+      cursor: pointer;
+      font-weight: 750;
+      padding: 10px 14px;
+      min-height: 40px;
+    }
+
+    button:disabled {
+      cursor: wait;
+      opacity: 0.7;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: calc(100vh - 165px);
+      resize: vertical;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #0d1015;
+      color: var(--text);
+      padding: 16px;
+      font: 14px/1.55 Consolas, "Cascadia Mono", "Courier New", monospace;
+      outline: none;
+      tab-size: 4;
+    }
+
+    textarea:focus {
+      border-color: var(--accent);
+    }
+
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .metric {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      padding: 12px;
+      min-height: 74px;
+    }
+
+    .metric-label {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 8px;
+    }
+
+    .metric-value {
+      font-size: 20px;
+      font-weight: 760;
+    }
+
+    .valid {
+      color: var(--good);
+    }
+
+    .invalid {
+      color: var(--bad);
+    }
+
+    .tabs {
+      display: flex;
+      gap: 6px;
+      border-bottom: 1px solid var(--line);
+      margin-bottom: 12px;
+      overflow-x: auto;
+    }
+
+    .tab {
+      background: transparent;
+      border-radius: 6px 6px 0 0;
+      color: var(--muted);
+      padding: 10px 12px;
+      min-height: 38px;
+    }
+
+    .tab.active {
+      background: var(--panel-2);
+      color: var(--text);
+    }
+
+    .output {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      min-height: calc(100vh - 245px);
+      overflow: auto;
+    }
+
+    pre {
+      margin: 0;
+      padding: 16px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font: 13px/1.55 Consolas, "Cascadia Mono", "Courier New", monospace;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+
+    th,
+    td {
+      padding: 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--line);
+    }
+
+    th {
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+
+    .empty {
+      color: var(--muted);
+      padding: 16px;
+    }
+
+    .error-list {
+      margin: 0;
+      padding: 12px 16px 16px 34px;
+      color: var(--bad);
+      line-height: 1.6;
+    }
+
+    @media (max-width: 900px) {
+      header {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      main {
+        grid-template-columns: 1fr;
+      }
+
+      .editor-pane {
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      textarea {
+        min-height: 360px;
+      }
+
+      .summary {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Syntax Analyzer</h1>
+    <div class="status-pill" id="status">Ready</div>
+  </header>
+
+  <main>
+    <section class="editor-pane">
+      <div class="toolbar">
+        <div class="toolbar-title">Source Code</div>
+        <button id="analyzeBtn" type="button">Analyze Code</button>
+      </div>
+      <textarea id="code" spellcheck="false">int main(){
+    int i;
+    int j;
+    int x;
+    char flag;
+
+    x = ++i + j--;
+    if(!flag){
+        x = -x + 5;
+    }
+
+    return x;
+}</textarea>
+    </section>
+
+    <section class="result-pane">
+      <div class="summary">
+        <div class="metric">
+          <div class="metric-label">Syntax</div>
+          <div class="metric-value" id="syntaxMetric">Not run</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Errors</div>
+          <div class="metric-value" id="errorMetric">0</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Tokens</div>
+          <div class="metric-value" id="tokenMetric">0</div>
+        </div>
+      </div>
+
+      <div class="tabs" role="tablist">
+        <button class="tab active" type="button" data-tab="output">Output</button>
+        <button class="tab" type="button" data-tab="ast">AST</button>
+        <button class="tab" type="button" data-tab="tac">TAC</button>
+        <button class="tab" type="button" data-tab="symbols">Symbols</button>
+      </div>
+
+      <div class="output" id="panel"></div>
+    </section>
+  </main>
+
+  <script>
+    const codeEl = document.getElementById("code");
+    const analyzeBtn = document.getElementById("analyzeBtn");
+    const statusEl = document.getElementById("status");
+    const syntaxMetric = document.getElementById("syntaxMetric");
+    const errorMetric = document.getElementById("errorMetric");
+    const tokenMetric = document.getElementById("tokenMetric");
+    const panel = document.getElementById("panel");
+    const tabs = Array.from(document.querySelectorAll(".tab"));
+
+    let currentTab = "output";
+    let lastResult = null;
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function setMetrics(result) {
+      const valid = Boolean(result && result.syntax_valid);
+      const errorCount = result ? result.errors.length : 0;
+      const tokenCount = result ? result.tokens.length : 0;
+
+      syntaxMetric.textContent = result ? (valid ? "Valid" : "Invalid") : "Not run";
+      syntaxMetric.className = `metric-value ${result ? (valid ? "valid" : "invalid") : ""}`;
+      errorMetric.textContent = String(errorCount);
+      errorMetric.className = `metric-value ${errorCount ? "invalid" : "valid"}`;
+      tokenMetric.textContent = String(tokenCount);
+    }
+
+    function renderList(lines, emptyText) {
+      if (!lines || lines.length === 0) {
+        return `<div class="empty">${escapeHtml(emptyText)}</div>`;
+      }
+      return `<pre>${escapeHtml(lines.join("\n"))}</pre>`;
+    }
+
+    function renderSymbols(symbols) {
+      if (!symbols || symbols.length === 0) {
+        return '<div class="empty">No symbols found.</div>';
+      }
+      const rows = symbols.map((symbol) => `
+        <tr>
+          <td>${escapeHtml(symbol.name)}</td>
+          <td>${escapeHtml(symbol.display_type)}</td>
+          <td>${escapeHtml(symbol.kind)}</td>
+        </tr>
+      `).join("");
+      return `
+        <table>
+          <thead><tr><th>Name</th><th>Type</th><th>Kind</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      `;
+    }
+
+    function renderOutput(result) {
+      if (!result) {
+        panel.innerHTML = '<div class="empty">Run analysis to see parser output.</div>';
+        return;
+      }
+
+      if (currentTab === "output") {
+        if (result.syntax_valid) {
+          panel.innerHTML = '<pre class="valid">Syntax: Valid\nErrors: 0</pre>';
+          return;
+        }
+
+        const items = result.errors.map((error) => `<li>${escapeHtml(error)}</li>`).join("");
+        panel.innerHTML = `<ol class="error-list">${items}</ol>`;
+        return;
+      }
+
+      if (currentTab === "ast") {
+        panel.innerHTML = renderList(result.ast, "No AST available because parsing failed.");
+        return;
+      }
+
+      if (currentTab === "tac") {
+        panel.innerHTML = renderList(result.tac, "No intermediate code available.");
+        return;
+      }
+
+      panel.innerHTML = renderSymbols(result.symbol_table);
+    }
+
+    async function analyze() {
+      analyzeBtn.disabled = true;
+      statusEl.textContent = "Analyzing";
+
+      try {
+        const response = await fetch("/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code: codeEl.value })
+        });
+        const result = await response.json();
+        lastResult = result;
+        setMetrics(result);
+        renderOutput(result);
+        statusEl.textContent = result.syntax_valid ? "Analysis complete" : "Errors found";
+      } catch (error) {
+        lastResult = {
+          syntax_valid: false,
+          errors: [error.message],
+          ast: [],
+          tac: [],
+          symbol_table: [],
+          tokens: []
+        };
+        setMetrics(lastResult);
+        renderOutput(lastResult);
+        statusEl.textContent = "Request failed";
+      } finally {
+        analyzeBtn.disabled = false;
+      }
+    }
+
+    tabs.forEach((tab) => {
+      tab.addEventListener("click", () => {
+        currentTab = tab.dataset.tab;
+        tabs.forEach((item) => item.classList.toggle("active", item === tab));
+        renderOutput(lastResult);
+      });
+    });
+
+    codeEl.addEventListener("keydown", (event) => {
+      if (event.key === "Tab") {
+        event.preventDefault();
+        const start = codeEl.selectionStart;
+        const end = codeEl.selectionEnd;
+        codeEl.value = `${codeEl.value.slice(0, start)}    ${codeEl.value.slice(end)}`;
+        codeEl.selectionStart = codeEl.selectionEnd = start + 4;
+      }
+    });
+
+    analyzeBtn.addEventListener("click", analyze);
+    setMetrics(null);
+    renderOutput(null);
+  </script>
+</body>
+</html>

@@ -613,6 +613,9 @@ def parse_relation(tokens, i, errors=None, context=None):
         parse_expr(tokens, i, errors, context)
         return -1, None
 
+    if left.type == "NOT":
+        return probe_i, left
+
     set_error(errors, i, "Expected relational operator", tokens)
     return -1, None
 

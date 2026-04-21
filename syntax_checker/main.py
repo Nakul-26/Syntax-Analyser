@@ -1,7 +1,58 @@
 from pathlib import Path
 
-from parser import format_error, parse_program
-from tokenizer import tokenize_with_lines
+try:
+    from .parser import format_error, parse_program
+    from .tokenizer import tokenize_with_lines
+except ImportError:
+    from parser import format_error, parse_program
+    from tokenizer import tokenize_with_lines
+
+
+def format_symbol_table(symbol_table):
+    symbols = []
+    for name, entry in symbol_table.items():
+        if isinstance(entry, dict):
+            var_type = entry["type"]
+            kind = "array" if entry.get("is_array") else "variable"
+            size = entry.get("size")
+            display_type = f"{var_type}[{size}]" if entry.get("is_array") else var_type
+        else:
+            var_type = entry
+            kind = "variable"
+            size = None
+            display_type = var_type
+
+        symbol = {
+            "name": name,
+            "type": var_type,
+            "display_type": display_type,
+            "kind": kind,
+        }
+        if size is not None:
+            symbol["size"] = size
+        symbols.append(symbol)
+    return symbols
+
+
+def analyze_code(code):
+    tokens, line_numbers = tokenize_with_lines(code)
+    errors = {"line_numbers": line_numbers}
+    context = {"symbol_table": {}}
+    tree = parse_program(tokens, errors, context)
+
+    error_items = errors.get("items", [])
+    formatted_errors = [format_error(item) for item in error_items]
+
+    return {
+        "syntax_valid": tree is not None and not error_items,
+        "errors": formatted_errors,
+        "error_details": error_items,
+        "ast": tree.to_lines() if tree is not None else [],
+        "ast_text": "\n".join(tree.to_lines()) if tree is not None else "",
+        "symbol_table": format_symbol_table(context.get("symbol_table", {})),
+        "tac": context.get("intermediate_code", []),
+        "tokens": tokens,
+    }
 
 
 def main():
@@ -10,14 +61,11 @@ def main():
     with program_path.open() as file:
         code = file.read()
 
-    tokens, line_numbers = tokenize_with_lines(code)
-    errors = {"line_numbers": line_numbers}
-    context = {"symbol_table": {}}
-    tree = parse_program(tokens, errors, context)
+    result = analyze_code(code)
 
-    if tree is None:
-        for item in errors.get("items", []):
-            print(format_error(item))
+    if not result["syntax_valid"]:
+        for error in result["errors"]:
+            print(error)
         print("Parsing completed with recovery")
         return
 
@@ -26,21 +74,15 @@ def main():
     print("Type Safe")
 
     print("\nSymbol Table:")
-    for name, entry in context["symbol_table"].items():
-        if isinstance(entry, dict):
-            var_type = entry["type"]
-            if entry.get("is_array"):
-                var_type = f"{var_type}[{entry.get('size')}]"
-        else:
-            var_type = entry
-        print(f"{name}\t{var_type}")
+    for symbol in result["symbol_table"]:
+        print(f"{symbol['name']}\t{symbol['display_type']}")
 
     print("\nIntermediate Code:")
-    for line in context["intermediate_code"]:
+    for line in result["tac"]:
         print(line)
 
     print("\nAST:")
-    print("\n".join(tree.to_lines()))
+    print(result["ast_text"])
 
 
 if __name__ == "__main__":
