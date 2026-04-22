@@ -363,6 +363,26 @@ def main():
         "        NUMBER (0)",
     ]
 
+    ast_visual_source = "int main(){ int a; return a; }"
+    ast_tree_expected = [
+        "PROGRAM",
+        "    FUNCTION (main)",
+        "        TYPE (int)",
+        "        BLOCK",
+        "            DECL (int)",
+        "                TYPE (int)",
+        "                IDENT (a)",
+        "            RETURN",
+        "                IDENT (a)",
+    ]
+    ast_levels_expected = [
+        "Level 0: PROGRAM",
+        "Level 1: FUNCTION (main)",
+        "Level 2: TYPE (int)  BLOCK",
+        "Level 3: DECL (int)  RETURN",
+        "Level 4: TYPE (int)  IDENT (a)  IDENT (a)",
+    ]
+
     tac_source = "int a; int b; int c; if(a>b){ a=b+c*5; } while(a<10){ a=a+1; }"
     tac_expected = [
         "t1 = c * 5",
@@ -464,6 +484,25 @@ def main():
     print(f"       expected = {dangling_else_tree_expected}")
     print(f"       actual   = {actual_dangling_else_tree}")
     if dangling_else_tree_ok:
+        passed += 1
+
+    total += 1
+    ast_visual_tree = parse_program(tokenize(ast_visual_source), {}, {"symbol_table": {}})
+    actual_ast_tree = ast_visual_tree.to_tree_lines() if ast_visual_tree is not None else None
+    ast_tree_ok = actual_ast_tree == ast_tree_expected
+    print(f"[{'PASS' if ast_tree_ok else 'FAIL'}] AST TREE {ast_visual_source!r}")
+    print(f"       expected = {ast_tree_expected}")
+    print(f"       actual   = {actual_ast_tree}")
+    if ast_tree_ok:
+        passed += 1
+
+    total += 1
+    actual_ast_levels = ast_visual_tree.to_level_lines() if ast_visual_tree is not None else None
+    ast_levels_ok = actual_ast_levels == ast_levels_expected
+    print(f"[{'PASS' if ast_levels_ok else 'FAIL'}] AST LEVELS {ast_visual_source!r}")
+    print(f"       expected = {ast_levels_expected}")
+    print(f"       actual   = {actual_ast_levels}")
+    if ast_levels_ok:
         passed += 1
 
     total += 1

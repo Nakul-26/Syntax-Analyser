@@ -42,13 +42,20 @@ def analyze_code(code):
 
     error_items = errors.get("items", [])
     formatted_errors = [format_error(item) for item in error_items]
+    ast_lines = tree.to_lines() if tree is not None else []
+    ast_tree_lines = tree.to_tree_lines() if tree is not None else []
+    ast_level_lines = tree.to_level_lines() if tree is not None else []
 
     return {
         "syntax_valid": tree is not None and not error_items,
         "errors": formatted_errors,
         "error_details": error_items,
-        "ast": tree.to_lines() if tree is not None else [],
-        "ast_text": "\n".join(tree.to_lines()) if tree is not None else "",
+        "ast": ast_lines,
+        "ast_text": "\n".join(ast_lines),
+        "ast_tree": ast_tree_lines,
+        "ast_tree_text": "\n".join(ast_tree_lines),
+        "ast_levels": ast_level_lines,
+        "ast_levels_text": "\n".join(ast_level_lines),
         "symbol_table": format_symbol_table(context.get("symbol_table", {})),
         "tac": context.get("intermediate_code", []),
         "tokens": tokens,
@@ -81,8 +88,11 @@ def main():
     for line in result["tac"]:
         print(line)
 
-    print("\nAST:")
-    print(result["ast_text"])
+    print("\nAST Level-wise:")
+    print(result["ast_levels_text"])
+
+    print("\nAST Tree:")
+    print(result["ast_tree_text"])
 
 
 if __name__ == "__main__":

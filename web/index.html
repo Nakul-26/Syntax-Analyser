@@ -223,6 +223,22 @@
       line-height: 1.6;
     }
 
+    .ast-section {
+      border-bottom: 1px solid var(--line);
+    }
+
+    .ast-section:last-child {
+      border-bottom: 0;
+    }
+
+    .ast-title {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      padding: 12px 16px 0;
+      text-transform: uppercase;
+    }
+
     @media (max-width: 900px) {
       header {
         align-items: flex-start;
@@ -362,6 +378,26 @@
       `;
     }
 
+    function renderAst(result) {
+      const levels = result.ast_levels || [];
+      const tree = result.ast_tree || result.ast || [];
+
+      if (levels.length === 0 && tree.length === 0) {
+        return '<div class="empty">No AST available because parsing failed.</div>';
+      }
+
+      return `
+        <div class="ast-section">
+          <div class="ast-title">Level-wise AST</div>
+          ${renderList(levels, "No level-wise AST available.")}
+        </div>
+        <div class="ast-section">
+          <div class="ast-title">Pretty Tree</div>
+          ${renderList(tree, "No tree AST available.")}
+        </div>
+      `;
+    }
+
     function renderOutput(result) {
       if (!result) {
         panel.innerHTML = '<div class="empty">Run analysis to see parser output.</div>';
@@ -380,7 +416,7 @@
       }
 
       if (currentTab === "ast") {
-        panel.innerHTML = renderList(result.ast, "No AST available because parsing failed.");
+        panel.innerHTML = renderAst(result);
         return;
       }
 

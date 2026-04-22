@@ -1,4 +1,5 @@
 import re
+from collections import deque
 
 
 class Node:
@@ -18,6 +19,38 @@ class Node:
         lines = ["  " * indent + self.label()]
         for child in self.children:
             lines.extend(child.to_lines(indent + 1))
+        return lines
+
+    def to_tree_lines(self, indent=0, step=4):
+        lines = [" " * indent + self.label()]
+        for child in self.children:
+            lines.extend(child.to_tree_lines(indent + step, step))
+        return lines
+
+    def to_level_lines(self):
+        lines = []
+        queue = deque([(self, 0)])
+        current_level = None
+        current_labels = []
+
+        while queue:
+            node, level = queue.popleft()
+
+            if current_level is None:
+                current_level = level
+            elif level != current_level:
+                lines.append(f"Level {current_level}: {'  '.join(current_labels)}")
+                current_level = level
+                current_labels = []
+
+            current_labels.append(node.label())
+
+            for child in node.children:
+                queue.append((child, level + 1))
+
+        if current_level is not None:
+            lines.append(f"Level {current_level}: {'  '.join(current_labels)}")
+
         return lines
 
 
