@@ -1,3 +1,8 @@
+"""
+This file connects the tokenizer, parser, and output formatter.
+It turns raw code into tokens, a tree, errors, and symbol data.
+"""
+
 from pathlib import Path
 
 try:
@@ -9,6 +14,7 @@ except ImportError:
 
 
 def format_symbol_table(symbol_table):
+    # Turn the internal symbol table into simple output data.
     symbols = []
     for name, entry in symbol_table.items():
         if isinstance(entry, dict):
@@ -35,11 +41,13 @@ def format_symbol_table(symbol_table):
 
 
 def analyze_code(code):
+    # Break the code into tokens and prepare error tracking.
     tokens, line_numbers = tokenize_with_lines(code)
     errors = {"line_numbers": line_numbers}
     context = {"symbol_table": {}}
     tree = parse_program(tokens, errors, context)
 
+    # Format the parse results for the front end.
     error_items = errors.get("items", [])
     formatted_errors = [format_error(item) for item in error_items]
     ast_lines = tree.to_lines() if tree is not None else []
@@ -63,6 +71,7 @@ def analyze_code(code):
 
 
 def main():
+    # Run the analyzer on the sample program file.
     program_path = Path(__file__).with_name("test_program.txt")
 
     with program_path.open() as file:
@@ -76,6 +85,7 @@ def main():
         print("Parsing completed with recovery")
         return
 
+    # Print the output in a simple console format.
     print("Syntax Valid")
     print("Semantic Valid")
     print("Type Safe")

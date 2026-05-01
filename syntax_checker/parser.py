@@ -1,7 +1,13 @@
+"""
+This file parses the code for the language used in the project.
+It builds the tree, checks simple rules, and makes intermediate code.
+"""
+
 import re
 from collections import deque
 
 
+# Tree nodes are used to build the AST.
 class Node:
     def __init__(self, type, value=None):
         self.type = type
@@ -54,6 +60,7 @@ class Node:
         return lines
 
 
+# Basic language settings and small helper values.
 DECLARATION_TYPES = {"int", "float", "char"}
 KEYWORDS = {
     "if",
@@ -77,6 +84,7 @@ DEBUG = False
 IDENTIFIER_PATTERN = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
 
+# Simple helper checks for tokens and values.
 def debug_log(*parts):
     if DEBUG:
         print(*parts)
@@ -130,6 +138,7 @@ def make_empty_statement():
     return Node("EMPTY")
 
 
+# Context helpers keep track of scope and semantic state.
 def semantic_enabled(context):
     return context is not None and "symbol_table" in context
 
@@ -238,6 +247,7 @@ def is_inside_breakable(context):
     return is_inside_loop(context) or is_inside_switch(context)
 
 
+# Type helpers and symbol lookup functions.
 def lookup_variable_type(context, name):
     entry = lookup_variable_entry(context, name)
     if entry is None:
@@ -295,6 +305,7 @@ def is_assignment_compatible(target_type, value_type):
     return target_type == "float" and value_type == "int"
 
 
+# Read the AST and guess the type of an expression.
 def infer_node_type(node, context):
     if node.type == "IDENT":
         return lookup_variable_type(context, node.value)
@@ -343,6 +354,7 @@ def new_temp(context):
     return temp
 
 
+# Build three-address style code for expressions and statements.
 def generate_expr_code(node, context):
     if node.type in ["IDENT", "NUMBER"]:
         return [], node.value
@@ -494,6 +506,7 @@ def generate_statement_code(node, context):
     return []
 
 
+# Save parse errors in a simple format.
 def set_error(errors, index, message, tokens=None):
     if errors is None:
         return
@@ -545,6 +558,7 @@ def get_last_error_index(errors, fallback_index):
     return last_index
 
 
+# Skip tokens until the parser can safely continue.
 def recover_to_sync(tokens, start_index, sync_tokens=None, consume=True):
     sync_tokens = SYNC_TOKENS if sync_tokens is None else sync_tokens
     i = max(0, start_index)
@@ -567,6 +581,7 @@ def recover_statement(tokens, errors, start_index, block_terminators=None):
     return recover_to_sync(tokens, get_last_error_index(errors, start_index), sync_tokens, consume=False)
 
 
+# Parse conditions with the same order used by the language.
 def parse_condition(tokens, i, errors=None, context=None):
     return parse_logical_or(tokens, i, errors, context)
 
@@ -653,6 +668,7 @@ def parse_relation(tokens, i, errors=None, context=None):
     return -1, None
 
 
+# Parse an array name followed by an index.
 def parse_array_access(tokens, i, errors=None, context=None):
     initialize_context(context)
 
@@ -694,6 +710,7 @@ def parse_array_access(tokens, i, errors=None, context=None):
     return i + 1, node
 
 
+# Parse the smallest parts of an expression.
 def parse_factor(tokens, i, errors=None, context=None):
     initialize_context(context)
 
@@ -775,6 +792,7 @@ def parse_factor(tokens, i, errors=None, context=None):
     return -1, None
 
 
+# Parse multiply, divide, and remainder operations.
 def parse_term(tokens, i, errors=None, context=None):
     initialize_context(context)
     i, node = parse_factor(tokens, i, errors, context)
@@ -796,6 +814,7 @@ def parse_term(tokens, i, errors=None, context=None):
     return i, node
 
 
+# Parse expression values and operators from left to right.
 def parse_expr(tokens, i, errors=None, context=None):
     initialize_context(context)
     i, node = parse_term(tokens, i, errors, context)
@@ -817,6 +836,7 @@ def parse_expr(tokens, i, errors=None, context=None):
     return i, node
 
 
+# Parse assignment statements and keep their simple form.
 def parse_assignment(tokens, i, errors=None, context=None):
     i, assignment = parse_assignment_core(tokens, i, errors, context)
     if i == -1:
@@ -886,6 +906,7 @@ def parse_assignment_core(tokens, i, errors=None, context=None):
     return i, assignment
 
 
+# Parse prefix and postfix increment or decrement.
 def parse_increment(tokens, i, errors=None, context=None):
     i, increment = parse_increment_core(tokens, i, errors, context)
     if i == -1:
@@ -934,6 +955,7 @@ def parse_increment_core(tokens, i, errors=None, context=None):
     return i, node
 
 
+# Parse the values inside a function call.
 def parse_argument_list(tokens, i, errors=None, context=None):
     args = []
 
@@ -953,6 +975,7 @@ def parse_argument_list(tokens, i, errors=None, context=None):
     return i, args
 
 
+# Parse a function call used inside an expression.
 def parse_call_expression(tokens, i, errors=None, context=None):
     initialize_context(context)
 
@@ -982,6 +1005,7 @@ def parse_call_expression(tokens, i, errors=None, context=None):
     return i + 1, call
 
 
+# Parse function calls used as standalone statements.
 def parse_call_statement(tokens, i, errors=None, context=None):
     i, call = parse_call_expression(tokens, i, errors, context)
     if i == -1:
@@ -997,6 +1021,7 @@ def parse_call_statement(tokens, i, errors=None, context=None):
     return i + 1, call_stmt
 
 
+# Parse a return statement.
 def parse_return(tokens, i, errors=None, context=None):
     initialize_context(context)
 
@@ -1018,6 +1043,7 @@ def parse_return(tokens, i, errors=None, context=None):
     return i + 1, node
 
 
+# Parse a break statement and check where it can be used.
 def parse_break(tokens, i, errors=None, context=None):
     initialize_context(context)
 
@@ -1036,6 +1062,7 @@ def parse_break(tokens, i, errors=None, context=None):
     return i + 1, Node("BREAK")
 
 
+# Parse a continue statement and check where it can be used.
 def parse_continue(tokens, i, errors=None, context=None):
     initialize_context(context)
 
@@ -1054,6 +1081,7 @@ def parse_continue(tokens, i, errors=None, context=None):
     return i + 1, Node("CONTINUE")
 
 
+# Parse a do-while loop.
 def parse_do_while(tokens, i, errors=None, context=None):
     initialize_context(context)
 
@@ -1099,6 +1127,7 @@ def parse_do_while(tokens, i, errors=None, context=None):
     return i + 1, node
 
 
+# Parse one statement, then keep going until a stop token.
 def parse_statement_list(tokens, i, errors=None, context=None, stop_tokens=None):
     initialize_context(context)
     stop_tokens = {"}"} if stop_tokens is None else set(stop_tokens)
@@ -1185,6 +1214,7 @@ def parse_case_list(tokens, i, errors=None, context=None):
     return i, cases
 
 
+# Parse a switch block and its case labels.
 def parse_switch(tokens, i, errors=None, context=None):
     initialize_context(context)
 
@@ -1233,6 +1263,7 @@ def parse_switch(tokens, i, errors=None, context=None):
     return i + 1, switch_node
 
 
+# Parse a for loop with init, condition, update, and body.
 def parse_for(tokens, i=0, errors=None, context=None):
     initialize_context(context)
 
@@ -1300,6 +1331,7 @@ def parse_for(tokens, i=0, errors=None, context=None):
     return i, for_node
 
 
+# Parse a block wrapped in braces.
 def parse_block(tokens, i, errors=None, context=None):
     initialize_context(context)
 
@@ -1334,6 +1366,7 @@ def parse_block(tokens, i, errors=None, context=None):
     return i + 1, block
 
 
+# Parse an if statement and its optional else part.
 def parse_if(tokens, i=0, errors=None, context=None):
     initialize_context(context)
 
@@ -1392,6 +1425,7 @@ def parse_if(tokens, i=0, errors=None, context=None):
     return i, if_node
 
 
+# Parse a while loop.
 def parse_while(tokens, i=0, errors=None, context=None):
     initialize_context(context)
 
@@ -1436,6 +1470,7 @@ def parse_while(tokens, i=0, errors=None, context=None):
     return i, while_node
 
 
+# Parse one or more declarations in a row.
 def parse_declaration_core(tokens, i, errors=None, context=None):
     initialize_context(context)
 
@@ -1530,6 +1565,7 @@ def parse_declaration(tokens, i, errors=None, context=None):
     return i + 1, declaration
 
 
+# Parse one full statement and choose the right handler.
 def parse_statement(tokens, i, errors=None, context=None):
     initialize_context(context)
     debug_log("Parsing statement at token", i, tokens[i] if i < len(tokens) else "<eof>")
@@ -1645,6 +1681,7 @@ def parse_parameter_list(tokens, i, errors=None, context=None):
     return i, params
 
 
+# Parse a function definition or function prototype.
 def parse_function_definition(tokens, i, errors=None, context=None):
     initialize_context(context)
 
@@ -1699,6 +1736,7 @@ def parse_function_definition(tokens, i, errors=None, context=None):
     return i, function_node
 
 
+# Parse the main function and keep only its body tree.
 def parse_main(tokens, i, errors=None, context=None):
     i, function_node = parse_function_definition(tokens, i, errors, context)
     if i == -1:
@@ -1716,6 +1754,7 @@ def parse_main(tokens, i, errors=None, context=None):
     return i, main_node
 
 
+# Parse the whole token stream into one program tree.
 def parse_program(tokens, errors=None, context=None):
     initialize_context(context)
 

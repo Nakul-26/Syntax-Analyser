@@ -1,3 +1,8 @@
+"""
+This file writes the front-end API config file.
+It helps the web page know which backend URL to call.
+"""
+
 from __future__ import annotations
 
 import os
@@ -11,6 +16,7 @@ OUTPUT_FILE = WEB_DIR / "env.js"
 
 
 def load_dotenv(path: Path) -> dict[str, str]:
+    # Read simple key=value lines from the env file.
     values: dict[str, str] = {}
     if not path.exists():
         return values
@@ -28,6 +34,7 @@ def load_dotenv(path: Path) -> dict[str, str]:
 
 
 def main() -> None:
+    # Pick the API URL from the environment or use the default one.
     file_env = load_dotenv(ENV_FILE)
     api_base_url = (
         os.environ.get("FRONTEND_API_BASE_URL")
@@ -38,6 +45,7 @@ def main() -> None:
     )
 
     OUTPUT_FILE.write_text(
+        # Write a tiny config file for the browser page.
         "window.APP_CONFIG = {\n"
         f'  API_BASE_URL: "{api_base_url.rstrip("/")}"\n'
         "};\n",

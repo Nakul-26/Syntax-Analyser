@@ -1,3 +1,8 @@
+"""
+This file turns source code into tokens.
+It also removes comments before the parser sees the code.
+"""
+
 import re
 
 
@@ -5,6 +10,7 @@ TOKEN_PATTERN = r'"[^"\\]*(?:\\.[^"\\]*)*"|\'[^\'\\]*(?:\\.[^\'\\]*)*\'|\d+\.\d+
 
 
 def strip_comments(source):
+    # Remove // and /* */ comments but keep strings and chars safe.
     result = []
     i = 0
     in_line_comment = False
@@ -81,11 +87,13 @@ def strip_comments(source):
 
 
 def tokenize(source):
+    # Clean the code and split it into tokens.
     clean_source = strip_comments(source)
     return re.findall(TOKEN_PATTERN, clean_source)
 
 
 def tokenize_with_lines(source):
+    # Tokenize the code and also remember the line for each token.
     clean_source = strip_comments(source)
     tokens = []
     line_numbers = []
