@@ -3,20 +3,22 @@
 ## Frontend: Cloudflare Pages
 
 1. Create a new Cloudflare Pages project from this repository.
-2. Set the build output to the `web` folder if you use a direct upload or a static build step.
-3. Make sure `web/index.html` points to your backend URL:
-   - Edit [`web/env.js`](web/env.js) and replace `https://YOUR-VERCEL-APP.vercel.app` with the real Vercel deployment URL.
-4. Deploy the Pages project.
+2. Set the build command to `python build_frontend.py`.
+3. Set the build output directory to `web`.
+4. Add a production environment variable:
+   - `FRONTEND_API_BASE_URL` = your Vercel backend URL, for example `https://syntax-analyser.vercel.app`
+5. Deploy the Pages project.
 
 ## Backend: Vercel
 
 1. Import the same repository into Vercel.
 2. Deploy the Python app from `app.py`.
 3. Keep `requirements.txt` minimal.
-4. After deployment, copy the Vercel URL into `web/env.js`.
+4. Add a production environment variable:
+   - `FRONTEND_ORIGIN` = your Cloudflare Pages URL, for example `https://syntax-analyser.pages.dev`
 
 ## What changed in the code
 
 - The backend now acts like an API-only serverless app.
-- CORS headers are enabled so Cloudflare Pages can call the Vercel API.
-- The frontend now sends requests to a configurable backend URL instead of a same-origin `/analyze` endpoint.
+- CORS headers are controlled by `FRONTEND_ORIGIN`.
+- The frontend URL is generated at build time from `FRONTEND_API_BASE_URL`.

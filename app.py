@@ -1,14 +1,17 @@
+import os
+
 from flask import Flask, jsonify, request
 
 from syntax_checker.main import analyze_code
 
 
 app = Flask(__name__)
+FRONTEND_ORIGIN = os.environ.get("FRONTEND_ORIGIN", "*").rstrip("/")
 
 
 @app.after_request
 def add_cors_headers(response):
-    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Origin"] = FRONTEND_ORIGIN
     response.headers["Access-Control-Allow-Headers"] = "Content-Type"
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
     return response
