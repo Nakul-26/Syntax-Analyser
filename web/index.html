@@ -319,6 +319,9 @@
   </main>
 
   <script>
+    window.API_BASE_URL = "https://YOUR-VERCEL-APP.vercel.app";
+  </script>
+  <script>
     const codeEl = document.getElementById("code");
     const analyzeBtn = document.getElementById("analyzeBtn");
     const statusEl = document.getElementById("status");
@@ -327,6 +330,7 @@
     const tokenMetric = document.getElementById("tokenMetric");
     const panel = document.getElementById("panel");
     const tabs = Array.from(document.querySelectorAll(".tab"));
+    const apiBaseUrl = (window.API_BASE_URL || "").replace(/\/$/, "");
 
     let currentTab = "output";
     let lastResult = null;
@@ -433,7 +437,7 @@
       statusEl.textContent = "Analyzing";
 
       try {
-        const response = await fetch("/analyze", {
+        const response = await fetch(apiBaseUrl ? `${apiBaseUrl}/analyze` : "/analyze", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ code: codeEl.value })

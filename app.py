@@ -1,23 +1,29 @@
-from pathlib import Path
-
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request
 
 from syntax_checker.main import analyze_code
 
 
-BASE_DIR = Path(__file__).resolve().parent
-STATIC_DIR = BASE_DIR / "web"
+app = Flask(__name__)
 
-app = Flask(__name__, static_folder=str(STATIC_DIR), static_url_path="")
+
+@app.after_request
+def add_cors_headers(response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    return response
 
 
 @app.get("/")
 def index():
-    return send_from_directory(STATIC_DIR, "index.html")
+    return jsonify({"status": "ok", "service": "syntax-analyser-api"})
 
 
-@app.post("/analyze")
+@app.route("/analyze", methods=["POST", "OPTIONS"])
 def analyze():
+    if request.method == "OPTIONS":
+        return ("", 204)
+
     payload = request.get_json(silent=True) or {}
     code = payload.get("code", "")
     if not isinstance(code, str):
