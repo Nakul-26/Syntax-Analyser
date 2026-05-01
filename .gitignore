@@ -31,6 +31,16 @@ dist/
 .vscode/
 .idea/
 
+# Environment and local config
+.env
+.env.*
+!.env.example
+web/env.local.js
+
+# Deployment and tooling metadata
+.vercel/
+.cloudflare/
+
 # OS files
 .DS_Store
 Thumbs.db

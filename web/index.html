@@ -318,9 +318,7 @@
     </section>
   </main>
 
-  <script>
-    window.API_BASE_URL = "https://YOUR-VERCEL-APP.vercel.app";
-  </script>
+  <script src="/env.js"></script>
   <script>
     const codeEl = document.getElementById("code");
     const analyzeBtn = document.getElementById("analyzeBtn");
@@ -330,7 +328,7 @@
     const tokenMetric = document.getElementById("tokenMetric");
     const panel = document.getElementById("panel");
     const tabs = Array.from(document.querySelectorAll(".tab"));
-    const apiBaseUrl = (window.API_BASE_URL || "").replace(/\/$/, "");
+    const apiBaseUrl = ((window.APP_CONFIG && window.APP_CONFIG.API_BASE_URL) || "").replace(/\/$/, "");
 
     let currentTab = "output";
     let lastResult = null;
